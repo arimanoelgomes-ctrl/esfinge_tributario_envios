@@ -2,7 +2,9 @@
 
 Dashboard web para acompanhamento executivo dos envios ao **e-Sfinge Tributário** do Tribunal de Contas de Santa Catarina — carteira **Betha Sistemas**.
 
-A página é **estática** (HTML + JS), busca os dados diretamente da **planilha do Google Sheets** a cada carregamento / clique em **Atualizar**, e pode ser publicada via **GitHub Pages**.
+A página é **estática** (HTML + JS) e busca os dados da **planilha E-sfinge 2026** sempre que é carregada ou quando o botão **Atualizar** é clicado.
+
+> **URL pública:** https://arimanoelgomes-ctrl.github.io/esfinge_tributario_envios/
 
 ---
 
@@ -21,89 +23,80 @@ A página é **estática** (HTML + JS), busca os dados diretamente da **planilha
 
 Planilha: **E-sfinge 2026** — <https://docs.google.com/spreadsheets/d/1BkynLo9QFgdwnHgtGwj6ouo6wtKMN8Lod9Reskke9h4/edit>
 
-Abas utilizadas (gids):
+Abas utilizadas:
 
-| Competência | gid            |
-|-------------|----------------|
-| 01/2026     | `0`            |
-| 02/2026     | `1841245082`   |
-| 03/2026     | `1102792864`   |
+| Competência | Aba                    | gid            |
+|-------------|------------------------|----------------|
+| 01/2026     | `Clientes_Janeiro`     | `0`            |
+| 02/2026     | `Clientes_Fevereiro`   | `1841245082`   |
+| 03/2026     | `Clientes_Março`       | `1102792864`   |
 
 Colunas lidas: `Cliente`, `Canal`, `Responsável`, `Competência`, `Geração`, `Tratamento de Dados`, `Validação`, `Cons`, `Envio`, `Finalização`, `Con Finalização`, `Chamado atendimento`, `Chamado Desenvolvimento`.
 
-A atualização é **manual**: o time edita a planilha e, ao clicar em **Atualizar** no dashboard (ou recarregar a página), os dados mais recentes são buscados via `gviz/tq?tqx=out:csv`.
-
 ---
 
-## Pré-requisito obrigatório: tornar a planilha acessível publicamente
+## Como a leitura dos dados funciona
 
-Para o site estático conseguir ler os dados do navegador, a planilha precisa estar acessível sem login. Há duas formas equivalentes:
+A planilha está compartilhada somente dentro do domínio **@betha.com.br** (corporativo). Por isso o navegador de um visitante — mesmo que seja da Betha — **não consegue** buscar os dados diretamente da planilha, pois `fetch` entre origens (GitHub Pages → docs.google.com) não envia cookies do Google.
 
-### Opção A — Compartilhamento por link (recomendado)
+A solução adotada é um **Apps Script** que roda dentro do Google (autenticado como o dono da planilha) e expõe um endpoint HTTP público que o dashboard consome:
 
-1. Abrir a planilha **E-sfinge 2026**.
-2. Clicar em **Compartilhar** (canto superior direito).
-3. Em "Acesso geral", escolher **Qualquer pessoa com o link · Leitor**.
-4. Salvar.
+```
+GitHub Pages (dashboard)  →  Apps Script Web App (autenticado)  →  Planilha
+```
 
-### Opção B — Publicar na web (mais restritivo às abas)
+### Passo 1 · Implantar o Apps Script (1 vez)
 
-1. Menu **Arquivo > Compartilhar > Publicar na web**.
-2. Escolher **Documento inteiro** e formato **Valores separados por vírgula (.csv)**.
-3. Clicar em **Publicar** e confirmar.
+1. Abrir <https://script.google.com/> **logado com a conta @betha.com.br** que tem acesso à planilha.
+2. Clicar em **"Novo projeto"** e dar um nome, ex: `API e-Sfinge Dashboard`.
+3. Apagar o conteúdo padrão e **colar todo o conteúdo** do arquivo [`apps_script/Code.gs`](./apps_script/Code.gs) deste repositório.
+4. Salvar (Ctrl + S).
+5. Menu **Implantar > Nova implantação > Selecionar tipo > Aplicativo da Web**.
+   - **Descrição**: `API pública do dashboard e-Sfinge`
+   - **Executar como**: `Eu (seu-email@betha.com.br)` *(importante)*
+   - **Quem tem acesso**: `Qualquer pessoa` *(importante)*
+6. Clicar em **Implantar** e autorizar o acesso à planilha quando o Google pedir.
+7. **Copiar a URL do aplicativo da Web**. Ela tem o formato:
+   ```
+   https://script.google.com/macros/s/AKfycb.../exec
+   ```
 
-> Em ambos os casos, **nenhum dado é indexado automaticamente**. Apenas quem possuir o link do dashboard (ou da planilha) consegue acessar.
+### Passo 2 · Apontar o dashboard para o Apps Script
 
-Se a planilha não estiver acessível, o dashboard mostrará um aviso amarelo e carregará os dados do último *deploy* (embutidos no próprio HTML).
+Edite o arquivo [`config.js`](./config.js) na raiz do repositório e cole a URL:
+
+```js
+window.APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycb.../exec";
+```
+
+Pode editar direto no GitHub (botão ✏️ em `config.js` → colar URL → **Commit changes**). O GitHub Pages republica automaticamente em ~1 minuto.
+
+### Passo 3 · Atualizar o Apps Script quando a lógica mudar
+
+Apenas se o conteúdo do `Code.gs` for alterado. No script: **Implantar > Gerenciar implantações** → ícone de lápis → **Versão: Nova versão** → **Implantar** (isso **não** gera uma URL nova — mantém a mesma URL de antes).
+
+Mudanças apenas nos **dados** da planilha **não exigem nada** — o dashboard relê na hora.
 
 ---
 
 ## Publicando no GitHub Pages
 
-O repositório de destino é: <https://github.com/arimanoelgomes-ctrl/esfinge_tributario_envios>
+Este repositório já está publicado em:  
+**https://arimanoelgomes-ctrl.github.io/esfinge_tributario_envios/**
 
-### Primeiro deploy (passo-a-passo)
-
-```bash
-# 1. Entrar na pasta do projeto
-cd esfinge_tributario_envios
-
-# 2. Adicionar os arquivos ao git
-git add index.html assets README.md .gitignore .nojekyll
-git commit -m "feat: dashboard executivo e-Sfinge com fetch ao vivo da planilha"
-
-# 3. Conectar ao repositório remoto (se ainda não estiver)
-git remote add origin https://github.com/arimanoelgomes-ctrl/esfinge_tributario_envios.git
-
-# 4. Publicar
-git push -u origin main
-```
-
-### Ativar o GitHub Pages
-
-1. Acessar o repositório no GitHub.
-2. **Settings > Pages**.
-3. Em **Build and deployment > Source**, selecionar **Deploy from a branch**.
-4. Branch: `main`, pasta: `/ (root)`. Salvar.
-5. Aguardar 1–2 minutos. O GitHub exibirá a URL pública, algo como:
-   `https://arimanoelgomes-ctrl.github.io/esfinge_tributario_envios/`
-
-### Atualizações futuras
+Atualizações do dashboard (código HTML/CSS/JS):
 
 ```bash
-# Qualquer mudança (layout, lógica, etc.)
 git add .
-git commit -m "chore: ajuste <descrição>"
+git commit -m "chore: <descrição>"
 git push
 ```
 
-O GitHub Pages republica automaticamente em ~1 minuto. O dashboard sempre lê a planilha ao vivo, então **mudanças nos dados da planilha aparecem imediatamente**, sem necessidade de novo deploy.
+GitHub Pages republica automaticamente em 1–2 minutos.
 
 ---
 
 ## Desenvolvimento local
-
-O projeto é 100% estático — não há dependências ou build. Basta abrir `index.html` no navegador. Como a página faz `fetch` para a planilha, ela precisa ser servida por HTTP (não `file://`):
 
 ```bash
 # Opção 1: Python
@@ -113,25 +106,29 @@ python3 -m http.server 8080
 npx serve .
 ```
 
-Depois abrir <http://localhost:8080>.
+Abrir <http://localhost:8080>. O `fetch` precisa ser servido por HTTP — abrir o `index.html` direto via `file://` não funciona.
 
 ---
 
 ## Arquitetura
 
 - **Frontend único**: `index.html` com CSS e JS embutidos.
+- **Configuração**: `config.js` carrega a URL do Apps Script.
 - **Gráficos**: [Chart.js 4.4.0](https://www.chartjs.org/) via CDN.
-- **Parser CSV**: implementado em JS (suporta aspas e quebras de linha dentro de células).
-- **Fallback**: snapshot dos dados embutido no HTML, usado se a planilha estiver inacessível.
+- **Backend leve**: `apps_script/Code.gs` (Google Apps Script) lê a planilha e retorna JSON.
+- **Fallback**: snapshot dos dados embutido no próprio `index.html`, usado caso o fetch falhe.
 
 ## Estrutura de arquivos
 
 ```
 esfinge_tributario_envios/
-├── index.html          # dashboard (entrypoint)
+├── index.html              # dashboard (entrypoint do GitHub Pages)
+├── config.js               # URL do Apps Script Web App
+├── apps_script/
+│   └── Code.gs             # código do backend para colar no script.google.com
 ├── assets/
 │   └── favicon.svg
-├── .nojekyll           # evita processamento Jekyll no Pages
+├── .nojekyll               # evita processamento Jekyll no Pages
 ├── .gitignore
 └── README.md
 ```
@@ -140,4 +137,4 @@ esfinge_tributario_envios/
 
 ## Logos
 
-Os logos do **Tribunal de Contas de Santa Catarina** e da **Betha Sistemas** estão renderizados como SVG inline no cabeçalho. Caso queira substituir por assets oficiais, basta trocar os blocos `<svg>` dentro de `header.top .logos` no `index.html`.
+Os logos do **Tribunal de Contas de Santa Catarina** e da **Betha Sistemas** estão renderizados como SVG inline no cabeçalho. Para substituir por assets oficiais, basta trocar os blocos `<svg>` dentro de `header.top .logos` no `index.html`.

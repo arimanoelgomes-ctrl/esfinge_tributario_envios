@@ -7,6 +7,7 @@
 <meta name="description" content="Acompanhamento executivo dos envios ao e-Sfinge Tributário do TCE-SC — carteira Betha Sistemas.">
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="config.js?v=1"></script>
 <style>
 :root{
   --bg:#0f1729;
@@ -494,26 +495,43 @@ function buildRecords(rows, layout){
 }
 
 /* =====================================================
-   Google Sheets fetch
+   Data fetch: Apps Script Web App (preferido) OU gviz/tq
    ===================================================== */
-async function fetchTab(gid){
+async function fetchTabCSV(gid){
   // gviz/tq: works for "anyone with link" shared sheets; supports CORS
   const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}&cachebust=${Date.now()}`;
   const res = await fetch(url, { cache:'no-store', redirect:'follow' });
   if(!res.ok) throw new Error(`HTTP ${res.status} na aba ${gid}`);
   const text = await res.text();
-  // Google returns an HTML login page if the sheet is not public
   if(text.trim().startsWith('<')) throw new Error('Planilha não está acessível publicamente (recebido HTML em vez de CSV)');
   return parseCSV(text);
 }
 
-async function loadAllData(){
+async function loadViaAppsScript(url){
+  const u = url + (url.includes('?') ? '&' : '?') + 'cachebust=' + Date.now();
+  const res = await fetch(u, { cache:'no-store', redirect:'follow' });
+  if(!res.ok) throw new Error(`Apps Script HTTP ${res.status}`);
+  const json = await res.json();
+  if(!json || json.ok === false) throw new Error('Apps Script retornou erro: ' + (json && json.error || 'desconhecido'));
+  if(!json.data) throw new Error('Apps Script sem campo "data"');
+  return json.data;
+}
+
+async function loadViaGviz(){
   const result = {};
   for(const [comp, cfg] of Object.entries(SHEET_TABS)){
-    const rows = await fetchTab(cfg.gid);
+    const rows = await fetchTabCSV(cfg.gid);
     result[comp] = buildRecords(rows, cfg.layout);
   }
   return result;
+}
+
+async function loadAllData(){
+  const appsUrl = (window.APPS_SCRIPT_URL || '').trim();
+  if(appsUrl){
+    return await loadViaAppsScript(appsUrl);
+  }
+  return await loadViaGviz();
 }
 
 /* =====================================================
@@ -867,7 +885,9 @@ async function refreshData(firstLoad=false){
       <b>Não foi possível carregar os dados ao vivo.</b>
       Exibindo a última versão conhecida (do último deploy).<br>
       Motivo: <code>${(err.message||err)}</code><br>
-      Verifique se a planilha está compartilhada como <b>"Qualquer pessoa com o link · Leitor"</b> no Google Drive.`);
+      ${(window.APPS_SCRIPT_URL || '').trim()
+        ? 'Verifique se o Apps Script está implantado como <b>Aplicativo da Web</b> com acesso "<b>Qualquer pessoa</b>" e se a URL em <code>config.js</code> termina com <code>/exec</code>.'
+        : 'A planilha está em domínio corporativo (Betha Sistemas). Implante o <b>Apps Script</b> descrito no README e cole a URL em <code>config.js</code>. Enquanto isso, o dashboard exibe o snapshot do último deploy.'}`);
     document.getElementById('lastUpdate').textContent = '(dados do último deploy)';
     renderAll();
   } finally {
