@@ -1,12 +1,8 @@
 /**
  * Configuração pública do dashboard.
  *
- * Depois de implantar o Apps Script (veja apps_script/Code.gs), cole
- * abaixo a URL do aplicativo da Web. Ela começa com:
- *     https://script.google.com/macros/s/AKfycb.../exec
- *
- * Enquanto estiver vazia, o dashboard tentará ler a planilha diretamente
- * (gviz/tq), o que só funciona se a planilha estiver aberta para
- * "Qualquer pessoa com o link".
+ * URL do aplicativo da Web implantado via Google Apps Script.
+ * Para atualizar, editar apps_script/Code.gs e reimplantar (Implantar > Gerenciar
+ * implantações > editar versão existente > Nova versão > Implantar).
  */
-window.APPS_SCRIPT_URL = "";
+window.APPS_SCRIPT_URL = "https://script.google.com/a/macros/betha.com.br/s/AKfycbxRAwKnS-L2CAMoh-vJqZSHBfLrrTgjO8ukjcZfYN2enyDVQOjsSeARpIiZ8wZ8y7YY/exec";
