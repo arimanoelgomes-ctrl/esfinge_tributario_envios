@@ -1030,12 +1030,15 @@ function renderHistProgresso(){
       label: comp,
       data: serie,
       borderColor: cores[comp] || '#64748b',
-      backgroundColor: (cores[comp]||'#64748b')+'22',
+      backgroundColor: cores[comp] || '#64748b',
+      pointBackgroundColor: cores[comp] || '#64748b',
+      pointBorderColor: '#0f172a',
+      pointBorderWidth: 1.5,
       tension: 0.3,
       spanGaps: true,
       fill: false,
-      pointRadius: 3,
-      pointHoverRadius: 5,
+      pointRadius: 6,
+      pointHoverRadius: 8,
       borderWidth: 2.5
     };
   });
@@ -1060,7 +1063,7 @@ function renderHistProgresso(){
         }
       },
       scales:{
-        x:{ grid:{color:'rgba(148,163,184,.08)'}, ticks:{color:'#cbd5e1', maxRotation:0, autoSkip:true} },
+        x:{ offset:true, grid:{color:'rgba(148,163,184,.08)'}, ticks:{color:'#cbd5e1', maxRotation:0, autoSkip:true} },
         y:{
           beginAtZero:true,
           max: state.histMode==='abs' ? undefined : 100,
@@ -1102,11 +1105,14 @@ function renderHistEtapas(){
       label: etapa,
       data: serie,
       borderColor: cores[i],
-      backgroundColor: cores[i]+'18',
+      backgroundColor: cores[i],
+      pointBackgroundColor: cores[i],
+      pointBorderColor: '#0f172a',
+      pointBorderWidth: 1.5,
       tension: 0.3,
       spanGaps: true,
-      pointRadius: 2.5,
-      pointHoverRadius: 5,
+      pointRadius: 5,
+      pointHoverRadius: 7,
       borderWidth: 2
     };
   });
@@ -1132,7 +1138,7 @@ function renderHistEtapas(){
         }
       },
       scales:{
-        x:{ grid:{color:'rgba(148,163,184,.08)'}, ticks:{color:'#cbd5e1', maxRotation:0, autoSkip:true} },
+        x:{ offset:true, grid:{color:'rgba(148,163,184,.08)'}, ticks:{color:'#cbd5e1', maxRotation:0, autoSkip:true} },
         y:{
           beginAtZero:true, max:100,
           ticks:{ color:'#cbd5e1', callback:v=>v+'%' },
