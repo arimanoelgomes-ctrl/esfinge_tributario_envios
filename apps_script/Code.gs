@@ -222,6 +222,10 @@ function setupHistorico() {
     .setFontWeight('bold')
     .setBackground('#1e3a8a')
     .setFontColor('#ffffff');
+  // Força formato de texto em "Data Snapshot" (col A) e "Competência" (col C)
+  // pra evitar que o Sheets interprete "01/2026" como Date automaticamente.
+  sheet.getRange('A:A').setNumberFormat('@');
+  sheet.getRange('C:C').setNumberFormat('@');
   sheet.autoResizeColumns(1, HISTORICO_HEADERS.length);
 
   props.setProperty('HISTORICO_SHEET_ID', nova.getId());
@@ -277,6 +281,11 @@ function snapshotDiario() {
   if (!sheet) {
     throw new Error('Aba "' + HISTORICO_TAB + '" não encontrada na planilha de histórico.');
   }
+
+  // Garantia idempotente: força formato texto nas colunas A (data) e C (competência)
+  // pro Sheets não auto-interpretar valores como Date.
+  sheet.getRange('A:A').setNumberFormat('@');
+  sheet.getRange('C:C').setNumberFormat('@');
 
   const agora = new Date();
   const dataStr = Utilities.formatDate(agora, TZ, 'yyyy-MM-dd');
@@ -389,10 +398,21 @@ function lerHistoricoLinhas_() {
       if (dataStr instanceof Date) dataStr = Utilities.formatDate(dataStr, TZ, 'yyyy-MM-dd');
       else dataStr = String(dataStr || '').trim();
       if (!dataStr) continue;
+
+      // Competência: o Sheets pode ter interpretado "01/2026" como Date. Reverter.
+      let compStr = r[2];
+      if (compStr instanceof Date) {
+        const m = ('0' + (compStr.getMonth() + 1)).slice(-2);
+        const y = compStr.getFullYear();
+        compStr = m + '/' + y;
+      } else {
+        compStr = String(compStr || '').trim();
+      }
+
       out.push({
         data: dataStr,
         timestamp: String(r[1] || ''),
-        competencia: String(r[2] || ''),
+        competencia: compStr,
         cliente: String(r[3] || ''),
         canal: String(r[4] || ''),
         responsavel: String(r[5] || ''),
