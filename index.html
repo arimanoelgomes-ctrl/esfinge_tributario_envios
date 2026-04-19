@@ -507,14 +507,66 @@ async function fetchTabCSV(gid){
   return parseCSV(text);
 }
 
-async function loadViaAppsScript(url){
-  const u = url + (url.includes('?') ? '&' : '?') + 'cachebust=' + Date.now();
-  const res = await fetch(u, { cache:'no-store', redirect:'follow' });
-  if(!res.ok) throw new Error(`Apps Script HTTP ${res.status}`);
-  const json = await res.json();
-  if(!json || json.ok === false) throw new Error('Apps Script retornou erro: ' + (json && json.error || 'desconhecido'));
-  if(!json.data) throw new Error('Apps Script sem campo "data"');
-  return json.data;
+/**
+ * Carrega via JSONP (tag <script>) em vez de fetch.
+ * Motivo: o Apps Script está publicado com acesso restrito ao domínio
+ * @betha.com.br. Requisições fetch cross-origin não enviam os cookies
+ * de autenticação do Google, então o Apps Script redireciona para login
+ * e a chamada falha com "Failed to fetch". Tags <script> carregam
+ * cookies de terceiros (SameSite=None) normalmente — por isso funcionam.
+ *
+ * O Code.gs precisa devolver o JSON embrulhado numa chamada do
+ * callback quando recebe ?callback=nomeDaFuncao na URL.
+ */
+function loadViaAppsScript(url){
+  return new Promise((resolve, reject) => {
+    const cbName = '__esfinge_cb_' + Math.random().toString(36).slice(2, 10);
+    let done = false;
+    const timeoutMs = 30000;
+
+    const cleanup = () => {
+      delete window[cbName];
+      if (script && script.parentNode) script.parentNode.removeChild(script);
+      if (timer) clearTimeout(timer);
+    };
+
+    window[cbName] = (payload) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      if (!payload || payload.ok === false) {
+        reject(new Error('Apps Script retornou erro: ' + (payload && payload.error || 'desconhecido')));
+        return;
+      }
+      if (!payload.data) {
+        reject(new Error('Apps Script sem campo "data"'));
+        return;
+      }
+      resolve(payload.data);
+    };
+
+    const sep = url.includes('?') ? '&' : '?';
+    const src = url + sep + 'callback=' + cbName + '&cachebust=' + Date.now();
+
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.onerror = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error('Falha ao carregar Apps Script (JSONP). Verifique se você está logado com sua conta @betha.com.br e se o deploy do Apps Script permite acesso ao domínio Betha.'));
+    };
+
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error('Apps Script não respondeu em ' + (timeoutMs/1000) + 's'));
+    }, timeoutMs);
+
+    document.head.appendChild(script);
+  });
 }
 
 async function loadViaGviz(){

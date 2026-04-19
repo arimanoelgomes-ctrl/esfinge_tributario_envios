@@ -32,21 +32,41 @@ const ETAPAS = [
 ];
 
 function doGet(e) {
+  // Quando o dashboard está publicado em outro domínio (GitHub Pages)
+  // e este Web App está com acesso restrito ao domínio @betha.com.br,
+  // requisições fetch cross-origin não enviam os cookies de autenticação
+  // do Google, e a chamada é redirecionada para a tela de login.
+  // A solução é usar JSONP: se a URL vier com ?callback=nomeDaFuncao,
+  // respondemos com JavaScript que executa nomeDaFuncao(payload).
+  // Tags <script> carregam cookies de terceiros normalmente, então o
+  // Apps Script reconhece o usuário e devolve os dados.
+
+  let payload;
   try {
     const data = coletarDados_();
-    const payload = {
+    payload = {
       ok: true,
       generatedAt: new Date().toISOString(),
       data: data
     };
-    return ContentService
-      .createTextOutput(JSON.stringify(payload))
-      .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ ok: false, error: String(err) }))
-      .setMimeType(ContentService.MimeType.JSON);
+    payload = { ok: false, error: String(err) };
   }
+
+  const cb = (e && e.parameter && e.parameter.callback)
+    ? String(e.parameter.callback)
+    : '';
+
+  // Só aceita nomes de função válidos (segurança contra injeção de JS)
+  if (cb && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(cb)) {
+    return ContentService
+      .createTextOutput(cb + '(' + JSON.stringify(payload) + ');')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+
+  return ContentService
+    .createTextOutput(JSON.stringify(payload))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 function coletarDados_() {
