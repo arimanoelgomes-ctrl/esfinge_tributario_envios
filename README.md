@@ -11,6 +11,9 @@ A página é **estática** (HTML + JS) e busca os dados da **planilha E-sfinge 2
 ## Visões disponíveis
 
 - **KPIs executivos**: municípios na carteira, concluídos, em andamento, com incidente/chamado, não iniciados, envios concluídos, chamados vinculados e progresso médio.
+- **Evolução histórica diária** (linha do tempo) do progresso médio e % concluído por competência — baseada nos snapshots automáticos de 15:30.
+- **Evolução histórica por etapa** ao longo do tempo (Geração, Tratamento, Validação, Cons, Envio, Finalização, Con Finalização).
+- **Seletor de data** no cabeçalho: escolher uma data passada e o dashboard inteiro passa a mostrar a "foto" do e-Sfinge naquele dia (KPIs, tabela, gráficos).
 - **Evolução entre competências** (01, 02 e 03/2026) em % ou valor absoluto.
 - **Status por etapa/assunto**: Geração, Tratamento, Validação, Cons, Envio, Finalização e Con Finalização.
 - **Situação geral dos municípios** (donut).
@@ -76,6 +79,58 @@ Pode editar direto no GitHub (botão ✏️ em `config.js` → colar URL → **C
 Apenas se o conteúdo do `Code.gs` for alterado. No script: **Implantar > Gerenciar implantações** → ícone de lápis → **Versão: Nova versão** → **Implantar** (isso **não** gera uma URL nova — mantém a mesma URL de antes).
 
 Mudanças apenas nos **dados** da planilha **não exigem nada** — o dashboard relê na hora.
+
+---
+
+## Histórico diário (snapshots automáticos às 15:30)
+
+O dashboard armazena um snapshot diário do e-Sfinge em uma planilha separada chamada **E-sfinge Historico**. Isso permite:
+
+- Ver a **evolução diária** do progresso por competência (gráfico de linha)
+- Ver a **evolução por etapa** (Geração, Tratamento, Validação, Cons, Envio, Finalização, Con Finalização) ao longo do tempo
+- **Voltar no tempo**: selecionar qualquer data passada no cabeçalho e o dashboard inteiro passa a mostrar a "foto" do e-Sfinge naquele dia
+
+### Estrutura do histórico
+
+- **Planilha**: `E-sfinge Historico` (criada automaticamente no seu Drive na primeira execução)
+- **Aba**: `Snapshots`
+- **Granularidade**: 1 linha por município × competência × dia
+- **Colunas**: Data Snapshot, Timestamp, Competência, Cliente, Canal, Responsável, Geração, Tratamento, Validação, Cons, Envio, Finalização, Con Finalização, Progresso %, Situação Geral, Chamado Atendimento, Chamado Desenvolvimento
+
+### Setup (fazer **1 vez** após o Passo 3)
+
+No editor do Apps Script (`script.google.com`, mesmo projeto onde está o `Code.gs`):
+
+1. No topo da tela, onde lista as funções, selecionar **`setupHistorico`** e clicar em **Executar** (▶).  
+   O Google pedirá autorização para acessar o Drive. Autorizar.  
+   Isso cria a planilha `E-sfinge Historico` no seu Drive e grava o ID dela nas ScriptProperties.  
+   No log (Ctrl+Enter) vai aparecer a URL da planilha criada.
+
+2. Selecionar **`configurarTrigger`** e clicar em **Executar**.  
+   Isso agenda o snapshot diário para rodar todo dia entre 15h e 16h (horário de Brasília).
+
+3. **Opcional**: selecionar **`snapshotDiario`** e clicar em **Executar** uma vez. Isso grava o primeiro snapshot imediatamente, assim o dashboard já tem 1 ponto de histórico para mostrar.
+
+### Verificar se está rodando
+
+- Abrir a planilha `E-sfinge Historico` no seu Drive → ver se novas linhas aparecem a cada dia às 15:30.
+- No Apps Script: **Acionadores** (menu lateral com ícone de relógio) → deve listar um acionador de `snapshotDiario` com frequência "Diariamente".
+- **Execuções** (ícone de lista) → mostra o histórico de execuções, com sucesso/erro.
+
+### Se quiser mudar o horário ou a frequência
+
+Editar a função `configurarTrigger()` em `Code.gs` e rodar de novo. Exemplo — 2x ao dia:
+
+```javascript
+ScriptApp.newTrigger('snapshotDiario').timeBased().atHour(7).everyDays(1).inTimezone(TZ).create();
+ScriptApp.newTrigger('snapshotDiario').timeBased().atHour(18).everyDays(1).inTimezone(TZ).create();
+```
+
+> **Idempotência**: se `snapshotDiario` rodar mais de uma vez no mesmo dia, a execução mais recente sobrescreve as linhas do próprio dia — não duplica dados.
+
+### Volume esperado
+
+Para uma carteira de ~300 municípios × 3 competências = ~900 linhas/dia. Em 1 ano: ~330 mil linhas. O Google Sheets suporta até 10 milhões de células, então cabem vários anos sem problema.
 
 ---
 

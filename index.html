@@ -49,6 +49,13 @@ header.top .subtitle{font-size:12px;color:var(--text-dim);margin-top:2px}
 header.top .meta{font-size:12px;color:var(--text-dim);text-align:right;display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
 header.top .meta b{color:var(--text)}
 header.top .sep{height:34px;width:1px;background:var(--border);margin:0 2px}
+.date-picker{display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:6px 10px}
+.date-picker label{color:var(--text-dim);font-size:12px;margin:0}
+.date-picker select{background:transparent;color:var(--text);border:0;font-size:13px;font-weight:600;outline:none;cursor:pointer;padding-right:4px}
+.date-picker select option{background:var(--surface-2);color:var(--text)}
+.hist-badge{display:none;align-items:center;gap:6px;background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.5);color:#fde68a;padding:5px 10px;border-radius:8px;font-size:12px;font-weight:600}
+.hist-badge.show{display:inline-flex}
+.hist-badge .dot{width:7px;height:7px;border-radius:50%;background:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,.2)}
 
 .btn{
   display:inline-flex;align-items:center;gap:8px;
@@ -237,6 +244,16 @@ footer{margin-top:30px;text-align:center;color:var(--text-dim);font-size:12px;pa
     <div>
       Fonte: <b>E-sfinge 2026</b> · atualizado em <b id="lastUpdate">—</b>
     </div>
+    <div id="histBadge" class="hist-badge" title="Dashboard mostrando estado histórico de uma data passada">
+      <span class="dot"></span>
+      <span>Visualizando <b id="histBadgeDate"></b></span>
+    </div>
+    <div class="date-picker">
+      <label for="fData">📅 Ver dados de:</label>
+      <select id="fData" title="Escolha uma data para ver o estado histórico">
+        <option value="">Hoje (ao vivo)</option>
+      </select>
+    </div>
     <button id="btnRefresh" class="btn" title="Recarregar dados da planilha (Ctrl+R)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="23 4 23 10 17 10"/>
@@ -293,6 +310,34 @@ footer{margin-top:30px;text-align:center;color:var(--text-dim);font-size:12px;pa
   </section>
 
   <section class="kpis" id="kpis"></section>
+
+  <!-- ============================================================
+       Evolução histórica (snapshots diários do Apps Script)
+       ============================================================ -->
+  <section class="card" id="histSection">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+      <div>
+        <h3>Evolução histórica · progresso diário</h3>
+        <div class="sub">Progresso médio dos municípios ao longo do tempo, por competência <span id="histInfo" style="color:var(--text-dim)"></span></div>
+      </div>
+      <div class="toggle-group" id="histToggle">
+        <button data-mode="progresso" class="active">Progresso médio (%)</button>
+        <button data-mode="concluidos">% Concluídos</button>
+        <button data-mode="abs">Qtd. Concluídos</button>
+      </div>
+    </div>
+    <div class="chart-wrap tall"><canvas id="chartHistProgresso"></canvas></div>
+  </section>
+
+  <section class="card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+      <div>
+        <h3>Evolução histórica · por etapa</h3>
+        <div class="sub">% de municípios com cada etapa concluída ao longo do tempo — competência selecionada no filtro abaixo</div>
+      </div>
+    </div>
+    <div class="chart-wrap tall"><canvas id="chartHistEtapas"></canvas></div>
+  </section>
 
   <section>
     <div class="card">
@@ -518,7 +563,7 @@ async function fetchTabCSV(gid){
  * O Code.gs precisa devolver o JSON embrulhado numa chamada do
  * callback quando recebe ?callback=nomeDaFuncao na URL.
  */
-function loadViaAppsScript(url){
+function loadViaAppsScript(url, opts){
   return new Promise((resolve, reject) => {
     const cbName = '__esfinge_cb_' + Math.random().toString(36).slice(2, 10);
     let done = false;
@@ -538,15 +583,12 @@ function loadViaAppsScript(url){
         reject(new Error('Apps Script retornou erro: ' + (payload && payload.error || 'desconhecido')));
         return;
       }
-      if (!payload.data) {
-        reject(new Error('Apps Script sem campo "data"'));
-        return;
-      }
-      resolve(payload.data);
+      resolve(payload);
     };
 
     const sep = url.includes('?') ? '&' : '?';
-    const src = url + sep + 'callback=' + cbName + '&cachebust=' + Date.now();
+    const extra = opts && opts.params ? '&' + new URLSearchParams(opts.params).toString() : '';
+    const src = url + sep + 'callback=' + cbName + '&cachebust=' + Date.now() + extra;
 
     const script = document.createElement('script');
     script.src = src;
@@ -575,15 +617,34 @@ async function loadViaGviz(){
     const rows = await fetchTabCSV(cfg.gid);
     result[comp] = buildRecords(rows, cfg.layout);
   }
-  return result;
+  return { data: result, historico_agregado: [] };
 }
 
+/**
+ * Retorna { data: dadosAtuais, historico_agregado: [...] }
+ * Via Apps Script traz ambos em uma só chamada; via gviz só os atuais.
+ */
 async function loadAllData(){
   const appsUrl = (window.APPS_SCRIPT_URL || '').trim();
   if(appsUrl){
-    return await loadViaAppsScript(appsUrl);
+    const payload = await loadViaAppsScript(appsUrl);
+    return {
+      data: payload.data || {},
+      historico_agregado: payload.historico_agregado || []
+    };
   }
   return await loadViaGviz();
+}
+
+/**
+ * Busca o snapshot detalhado de uma data histórica específica.
+ * Retorna no mesmo formato de loadAllData().data (map competencia -> array).
+ */
+async function loadHistoricoDetalhe(dataStr){
+  const appsUrl = (window.APPS_SCRIPT_URL || '').trim();
+  if(!appsUrl) throw new Error('Histórico só funciona com Apps Script configurado');
+  const payload = await loadViaAppsScript(appsUrl, { params: { api: 'historico_data', data: dataStr } });
+  return payload.historico_detalhe || {};
 }
 
 /* =====================================================
@@ -595,12 +656,17 @@ const FALLBACK = {"01/2026":[{"cliente":"ABDON BATISTA","canal":"Pequenas Contas
    State
    ===================================================== */
 let DATA = {};
+let DATA_AO_VIVO = {};        // snapshot dos dados atuais (sempre da planilha)
+let HISTORICO_AGREGADO = [];  // [{data, competencia, total, concluidos, progresso_medio, etapas:{...}}, ...]
 const state = {
   competencia:'01/2026', canal:'', responsavel:'', situacao:'', busca:'',
   sort:{key:'cliente',dir:'asc'},
-  evoMode:'pct'
+  evoMode:'pct',
+  dataAlvo:'',       // '' = hoje (ao vivo); 'YYYY-MM-DD' = snapshot histórico
+  histMode:'progresso' // progresso | concluidos | abs
 };
 let chartEvolucao, chartEtapa, chartGeral, chartCanal, chartResp;
+let chartHistProgresso, chartHistEtapas;
 
 /* =====================================================
    Helpers
@@ -891,11 +957,202 @@ function renderTable(){
 }
 
 /* =====================================================
+   Histórico (gráficos de evolução temporal)
+   ===================================================== */
+
+function formatDataBR(iso){
+  if(!iso) return '';
+  const p = iso.split('-');
+  if(p.length!==3) return iso;
+  return `${p[2]}/${p[1]}/${p[0]}`;
+}
+
+// Pega datas únicas do histórico ordenadas desc (mais recente primeiro)
+function listarDatasHistorico(){
+  const set = new Set();
+  HISTORICO_AGREGADO.forEach(r => set.add(r.data));
+  return Array.from(set).sort().reverse();
+}
+
+// Popula o <select id="fData"> com as datas do histórico
+function populateDatePicker(){
+  const sel = document.getElementById('fData');
+  const atual = sel.value;
+  const datas = listarDatasHistorico();
+  sel.innerHTML = '<option value="">Hoje (ao vivo)</option>'
+    + datas.map(d => `<option value="${d}">${formatDataBR(d)}</option>`).join('');
+  // manter seleção anterior se ainda existir
+  if(atual && datas.includes(atual)) sel.value = atual;
+}
+
+// Atualiza o badge "Visualizando DD/MM/YYYY" no header
+function atualizarBadgeHistorico(){
+  const badge = document.getElementById('histBadge');
+  const span  = document.getElementById('histBadgeDate');
+  if(state.dataAlvo){
+    span.textContent = formatDataBR(state.dataAlvo);
+    badge.classList.add('show');
+  } else {
+    badge.classList.remove('show');
+  }
+}
+
+function renderHistProgresso(){
+  const canvas = document.getElementById('chartHistProgresso');
+  const ctx = canvas.getContext('2d');
+  const info = document.getElementById('histInfo');
+
+  // Agrupa por data, depois por competência
+  const datas = Array.from(new Set(HISTORICO_AGREGADO.map(r=>r.data))).sort();
+  if(datas.length === 0){
+    if(chartHistProgresso){ chartHistProgresso.destroy(); chartHistProgresso = null; }
+    info.textContent = '· (sem snapshots ainda — aguardando o primeiro snapshot diário)';
+    return;
+  }
+  info.textContent = `· ${datas.length} dia${datas.length>1?'s':''} de histórico`;
+
+  // Para cada competência, constrói uma série
+  const cores = { '01/2026':'#3b82f6', '02/2026':'#10b981', '03/2026':'#f59e0b' };
+  const labelByMode = {
+    progresso:  r => r.progresso_medio,
+    concluidos: r => r.total>0 ? Math.round(1000*r.concluidos/r.total)/10 : 0,
+    abs:        r => r.concluidos
+  };
+  const yLabel = state.histMode==='abs' ? 'Qtd. concluídos' : '%';
+  const extrator = labelByMode[state.histMode];
+
+  const datasets = COMPETENCIAS.map(comp => {
+    const serie = datas.map(d => {
+      const rec = HISTORICO_AGREGADO.find(r => r.data===d && r.competencia===comp);
+      return rec ? extrator(rec) : null;
+    });
+    return {
+      label: comp,
+      data: serie,
+      borderColor: cores[comp] || '#64748b',
+      backgroundColor: (cores[comp]||'#64748b')+'22',
+      tension: 0.3,
+      spanGaps: true,
+      fill: false,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      borderWidth: 2.5
+    };
+  });
+
+  if(chartHistProgresso) chartHistProgresso.destroy();
+  chartHistProgresso = new Chart(ctx, {
+    type:'line',
+    data:{ labels: datas.map(formatDataBR), datasets },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index', intersect:false},
+      plugins:{
+        legend:{ position:'bottom', labels:{ color:'#e6ecff', usePointStyle:true } },
+        tooltip:{
+          callbacks:{
+            label:(c)=>{
+              const v = c.parsed.y;
+              if(v===null || v===undefined) return c.dataset.label + ': sem dado';
+              return c.dataset.label + ': ' + (state.histMode==='abs' ? v+' municípios' : v+'%');
+            }
+          }
+        }
+      },
+      scales:{
+        x:{ grid:{color:'rgba(148,163,184,.08)'}, ticks:{color:'#cbd5e1', maxRotation:0, autoSkip:true} },
+        y:{
+          beginAtZero:true,
+          max: state.histMode==='abs' ? undefined : 100,
+          ticks:{ color:'#cbd5e1', callback:v=>state.histMode==='abs'?v:v+'%' },
+          grid:{color:'rgba(148,163,184,.08)'},
+          title:{display:true, text:yLabel, color:'#94a3b8'}
+        }
+      }
+    }
+  });
+}
+
+function renderHistEtapas(){
+  const canvas = document.getElementById('chartHistEtapas');
+  const ctx = canvas.getContext('2d');
+
+  const datas = Array.from(new Set(HISTORICO_AGREGADO.map(r=>r.data))).sort();
+  if(datas.length === 0){
+    if(chartHistEtapas){ chartHistEtapas.destroy(); chartHistEtapas = null; }
+    return;
+  }
+
+  // Filtra pelo competência selecionada
+  const comp = state.competencia;
+  const porData = {};
+  HISTORICO_AGREGADO.filter(r => r.competencia===comp).forEach(r => { porData[r.data] = r; });
+
+  // Cores distintas por etapa
+  const cores = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ef4444','#06b6d4','#84cc16'];
+
+  const datasets = ETAPAS.map((etapa, i) => {
+    const serie = datas.map(d => {
+      const rec = porData[d];
+      if(!rec || !rec.etapas || !rec.etapas[etapa]) return null;
+      const et = rec.etapas[etapa];
+      return et.total>0 ? Math.round(1000*et.concluido/et.total)/10 : 0;
+    });
+    return {
+      label: etapa,
+      data: serie,
+      borderColor: cores[i],
+      backgroundColor: cores[i]+'18',
+      tension: 0.3,
+      spanGaps: true,
+      pointRadius: 2.5,
+      pointHoverRadius: 5,
+      borderWidth: 2
+    };
+  });
+
+  if(chartHistEtapas) chartHistEtapas.destroy();
+  chartHistEtapas = new Chart(ctx, {
+    type:'line',
+    data:{ labels: datas.map(formatDataBR), datasets },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index', intersect:false},
+      plugins:{
+        legend:{ position:'bottom', labels:{ color:'#e6ecff', usePointStyle:true, padding:10 } },
+        tooltip:{
+          callbacks:{
+            label:(c)=>{
+              const v = c.parsed.y;
+              if(v===null||v===undefined) return c.dataset.label + ': sem dado';
+              return c.dataset.label + ': ' + v + '% concluído';
+            }
+          },
+          title:(ctxs)=> 'Competência ' + comp + ' · ' + ctxs[0].label
+        }
+      },
+      scales:{
+        x:{ grid:{color:'rgba(148,163,184,.08)'}, ticks:{color:'#cbd5e1', maxRotation:0, autoSkip:true} },
+        y:{
+          beginAtZero:true, max:100,
+          ticks:{ color:'#cbd5e1', callback:v=>v+'%' },
+          grid:{color:'rgba(148,163,184,.08)'},
+          title:{display:true, text:'% de municípios com etapa concluída', color:'#94a3b8'}
+        }
+      }
+    }
+  });
+}
+
+/* =====================================================
    Main render + refresh
    ===================================================== */
 function renderAll(){
   populateFilterOptions();
+  atualizarBadgeHistorico();
   renderKPIs();
+  renderHistProgresso();
+  renderHistEtapas();
   renderEvolucao();
   renderEtapa();
   renderGeral();
@@ -922,11 +1179,20 @@ async function refreshData(firstLoad=false){
   showOverlay(firstLoad ? 'Carregando dados da planilha…' : 'Atualizando dados…');
   try{
     const fresh = await loadAllData();
-    // basic sanity
-    const total = Object.values(fresh).reduce((a,b)=>a+b.length,0);
+    const dataAtual = fresh.data || {};
+    const total = Object.values(dataAtual).reduce((a,b)=>a+(Array.isArray(b)?b.length:0),0);
     if(total===0) throw new Error('Planilha retornou 0 linhas.');
-    DATA = fresh;
+    DATA_AO_VIVO = dataAtual;
+    HISTORICO_AGREGADO = Array.isArray(fresh.historico_agregado) ? fresh.historico_agregado : [];
+    // Se o usuário estava vendo uma data histórica, mantém; caso contrário, volta pra "hoje"
+    if(state.dataAlvo && HISTORICO_AGREGADO.some(r=>r.data===state.dataAlvo)){
+      await aplicarSnapshotHistorico(state.dataAlvo);
+    } else {
+      state.dataAlvo = '';
+      DATA = DATA_AO_VIVO;
+    }
     document.getElementById('lastUpdate').textContent = new Date().toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
+    populateDatePicker();
     hideBanner();
     renderAll();
   } catch(err){
@@ -938,12 +1204,51 @@ async function refreshData(firstLoad=false){
       Exibindo a última versão conhecida (do último deploy).<br>
       Motivo: <code>${(err.message||err)}</code><br>
       ${(window.APPS_SCRIPT_URL || '').trim()
-        ? 'Verifique se o Apps Script está implantado como <b>Aplicativo da Web</b> com acesso "<b>Qualquer pessoa</b>" e se a URL em <code>config.js</code> termina com <code>/exec</code>.'
+        ? 'Verifique se o Apps Script está implantado como <b>Aplicativo da Web</b> com acesso ao domínio Betha e se a URL em <code>config.js</code> termina com <code>/exec</code>.'
         : 'A planilha está em domínio corporativo (Betha Sistemas). Implante o <b>Apps Script</b> descrito no README e cole a URL em <code>config.js</code>. Enquanto isso, o dashboard exibe o snapshot do último deploy.'}`);
     document.getElementById('lastUpdate').textContent = '(dados do último deploy)';
     renderAll();
   } finally {
     btn.disabled = false; btn.classList.remove('spin');
+    hideOverlay();
+  }
+}
+
+/**
+ * Troca DATA para o snapshot da data especificada (busca no Apps Script).
+ * dataStr vazio → volta para DATA_AO_VIVO.
+ */
+async function aplicarSnapshotHistorico(dataStr){
+  if(!dataStr){
+    state.dataAlvo = '';
+    DATA = DATA_AO_VIVO;
+    renderAll();
+    return;
+  }
+  showOverlay('Carregando dados de ' + formatDataBR(dataStr) + '…');
+  try{
+    const snap = await loadHistoricoDetalhe(dataStr);
+    // Se o snapshot desse dia está vazio, avisa
+    const total = Object.values(snap).reduce((a,b)=>a+(Array.isArray(b)?b.length:0),0);
+    if(total===0){
+      showBanner('warn', `<b>Sem dados históricos</b> para ${formatDataBR(dataStr)}. Mostrando dados de hoje.`);
+      state.dataAlvo = '';
+      document.getElementById('fData').value = '';
+      DATA = DATA_AO_VIVO;
+    } else {
+      state.dataAlvo = dataStr;
+      DATA = snap;
+      hideBanner();
+    }
+    renderAll();
+  } catch(err){
+    console.error(err);
+    showBanner('err', `<b>Falha ao carregar histórico de ${formatDataBR(dataStr)}:</b> ${err.message||err}`);
+    state.dataAlvo = '';
+    document.getElementById('fData').value = '';
+    DATA = DATA_AO_VIVO;
+    renderAll();
+  } finally {
     hideOverlay();
   }
 }
@@ -975,6 +1280,17 @@ document.querySelectorAll('#evoToggle button').forEach(b=>{
     state.evoMode = b.dataset.mode;
     renderEvolucao();
   });
+});
+document.querySelectorAll('#histToggle button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('#histToggle button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    state.histMode = b.dataset.mode;
+    renderHistProgresso();
+  });
+});
+document.getElementById('fData').addEventListener('change', e => {
+  aplicarSnapshotHistorico(e.target.value);
 });
 document.getElementById('btnRefresh').addEventListener('click',()=>refreshData(false));
 
