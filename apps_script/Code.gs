@@ -289,7 +289,8 @@ function snapshotDiario() {
 
   const agora = new Date();
   const dataStr = Utilities.formatDate(agora, TZ, 'yyyy-MM-dd');
-  const tsStr = agora.toISOString();
+  // Timestamp no fuso de Brasília (mais legível na planilha do que ISO/UTC)
+  const tsStr = Utilities.formatDate(agora, TZ, 'yyyy-MM-dd HH:mm:ss');
 
   // Idempotência: se já rodou hoje, apaga as linhas de hoje antes de reescrever
   removerLinhasDaData_(sheet, dataStr);
