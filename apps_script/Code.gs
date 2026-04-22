@@ -141,8 +141,15 @@ function lerAba_(ss, nome, layout) {
   const rows = sheet.getDataRange().getValues();
   if (!rows || rows.length < 2) return [];
 
+  // Layout 'janeiro' da aba Clientes_Janeiro tem 2 colunas extras em relação às demais:
+  //   0: Ordem de Prioridade | 1: Cliente | 2: Canal | 3: Responsável | 4: Sala de Guerra |
+  //   5: Competencia | 6: Geração | 7: Tratamento | 8: Validação | 9: Cons |
+  //   10: Envio | 11: Finalização | 12: Con Finalização | 13: Chamado atendimento | 14: Chamado Desenvolvimento
+  // Layout 'padrao' (Fevereiro/Março):
+  //   0: Cliente | 1: Canal | 2: Responsável | 3: Competencia |
+  //   4: Geração ... 10: Con Finalização | 11: Chamado atendimento | 12: Chamado Desenvolvimento
   const IDX = (layout === 'janeiro')
-    ? { cli: 1, can: 2, resp: 3, step: 5, chamAt: 12, chamDev: 13 }
+    ? { cli: 1, can: 2, resp: 3, step: 6, chamAt: 13, chamDev: 14 }
     : { cli: 0, can: 1, resp: 2, step: 4, chamAt: 11, chamDev: 12 };
 
   const out = [];
