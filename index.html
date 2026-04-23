@@ -376,9 +376,9 @@ footer{margin-top:30px;text-align:center;color:var(--text-dim);font-size:12px;pa
       <div class="chart-wrap tall"><canvas id="chartCanal"></canvas></div>
     </div>
     <div class="card">
-      <h3>Top responsáveis por volume</h3>
-      <div class="sub">Maiores carteiras e percentual concluído</div>
-      <div class="chart-wrap tall"><canvas id="chartResp"></canvas></div>
+      <h3>Responsáveis por volume</h3>
+      <div class="sub">Todas as carteiras · distribuição por Concluído, Em andamento e Pendente</div>
+      <div class="chart-wrap tall" id="chartRespWrap"><canvas id="chartResp"></canvas></div>
     </div>
   </section>
 
@@ -880,21 +880,39 @@ function renderResp(){
   const rows = getFiltered();
   const byR = {};
   rows.forEach(r=>{
-    if(!byR[r.responsavel]) byR[r.responsavel]={total:0,concluido:0};
+    if(!byR[r.responsavel]) byR[r.responsavel]={total:0,concluido:0,andamento:0,pendente:0};
+    const o = computeOverall(r);
     byR[r.responsavel].total++;
-    if(computeOverall(r)==='concluido') byR[r.responsavel].concluido++;
+    // Mapeamento para as 3 categorias solicitadas:
+    //  Concluído  = todas as etapas finalizadas
+    //  Em andamento = ao menos uma etapa iniciada (inclui incidente/erro de dado/chamado)
+    //  Pendente    = nada iniciado (Não iniciado e/ou Sem dado)
+    if(o==='concluido') byR[r.responsavel].concluido++;
+    else if(o==='andamento' || o==='incidente') byR[r.responsavel].andamento++;
+    else byR[r.responsavel].pendente++;
   });
-  const sorted = Object.entries(byR).sort((a,b)=>b[1].total-a[1].total).slice(0,10);
+  const sorted = Object.entries(byR).sort((a,b)=>b[1].total-a[1].total);
   const labels = sorted.map(e=>e[0]);
   const totals = sorted.map(e=>e[1].total);
-  const conc = sorted.map(e=>e[1].concluido);
-  const rest = sorted.map(e=>e[1].total-e[1].concluido);
+  const conc  = sorted.map(e=>e[1].concluido);
+  const andam = sorted.map(e=>e[1].andamento);
+  const pend  = sorted.map(e=>e[1].pendente);
+
+  // Ajusta altura do wrapper para caber todos os responsáveis
+  // (~26px por barra + ~80px de margens/legenda, mínimo 380px)
+  const wrap = document.getElementById('chartRespWrap');
+  if(wrap){
+    const h = Math.max(380, labels.length * 26 + 80);
+    wrap.style.height = h + 'px';
+  }
+
   if(chartResp) chartResp.destroy();
   chartResp = new Chart(document.getElementById('chartResp'),{
     type:'bar',
     data:{labels, datasets:[
-      {label:'Concluído', data:conc, backgroundColor:'#10b981', borderWidth:0, borderRadius:4, stack:'s'},
-      {label:'Pendente', data:rest, backgroundColor:'#1a49f2', borderWidth:0, borderRadius:4, stack:'s'}
+      {label:'Concluído',    data:conc,  backgroundColor:'#10b981', borderWidth:0, borderRadius:4, stack:'s'},
+      {label:'Em andamento', data:andam, backgroundColor:'#f59e0b', borderWidth:0, borderRadius:4, stack:'s'},
+      {label:'Pendente',     data:pend,  backgroundColor:'#64748b', borderWidth:0, borderRadius:4, stack:'s'}
     ]},
     options:{
       responsive:true, maintainAspectRatio:false, indexAxis:'y',
@@ -903,8 +921,11 @@ function renderResp(){
           label:ctx=>`${ctx.dataset.label}: ${ctx.parsed.x}`,
           afterBody:items=>{
             const i = items[0].dataIndex;
-            const pct = totals[i] ? Math.round(100*conc[i]/totals[i]) : 0;
-            return `Total: ${totals[i]} · ${pct}% concluído`;
+            const t = totals[i] || 0;
+            const pctC = t ? Math.round(100*conc[i]/t)  : 0;
+            const pctA = t ? Math.round(100*andam[i]/t) : 0;
+            const pctP = t ? Math.round(100*pend[i]/t)  : 0;
+            return `Total: ${t} · ${pctC}% concluído · ${pctA}% em andamento · ${pctP}% pendente`;
           }
         }}
       },
