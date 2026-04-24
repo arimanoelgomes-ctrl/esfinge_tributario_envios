@@ -35,12 +35,21 @@ const TABS = [
 ];
 
 const ETAPAS = [
-  'Geração', 'Tratamento de dados', 'Validação',
+  'Geração', 'Tratamento de dados', 'Validação IA', 'Validação',
   'Cons', 'Envio', 'Finalização', 'Con Finalização'
 ];
 
+// Etapas em que o status "Não realizado" deve contar como "Concluído"
+// (a etapa existe na planilha mas não foi necessária para o município).
+const ETAPAS_NAO_REALIZADO_CONCLUI = { 'Validação IA': true };
+
 const HISTORICO_NAME = 'E-sfinge Historico';
 const HISTORICO_TAB  = 'Snapshots';
+// IMPORTANTE: 'Validação IA' foi adicionada no FINAL (índice 17) para manter
+// compatibilidade com snapshots gravados antes da coluna existir na planilha.
+// Se a planilha de histórico for recriada (setupHistorico) futuramente,
+// considerar reordenar colocando 'Validação IA' entre 'Tratamento de dados'
+// e 'Validação'.
 const HISTORICO_HEADERS = [
   'Data Snapshot',      // 0 (YYYY-MM-DD)
   'Timestamp',          // 1 (ISO)
@@ -58,7 +67,8 @@ const HISTORICO_HEADERS = [
   'Progresso %',        // 13
   'Situação Geral',     // 14
   'Chamado Atendimento',// 15
-  'Chamado Desenvolvimento' // 16
+  'Chamado Desenvolvimento', // 16
+  'Validação IA'        // 17 (adicionada no final p/ não invalidar histórico antigo)
 ];
 
 const TZ = 'America/Sao_Paulo';
@@ -141,16 +151,19 @@ function lerAba_(ss, nome, layout) {
   const rows = sheet.getDataRange().getValues();
   if (!rows || rows.length < 2) return [];
 
-  // Layout 'janeiro' da aba Clientes_Janeiro tem 2 colunas extras em relação às demais:
+  // Layout 'janeiro' (aba Clientes_Janeiro) tem 2 colunas extras em relação às demais:
   //   0: Ordem de Prioridade | 1: Cliente | 2: Canal | 3: Responsável | 4: Sala de Guerra |
-  //   5: Competencia | 6: Geração | 7: Tratamento | 8: Validação | 9: Cons |
-  //   10: Envio | 11: Finalização | 12: Con Finalização | 13: Chamado atendimento | 14: Chamado Desenvolvimento
+  //   5: Competencia | 6: Geração | 7: Tratamento | 8: Validação IA | 9: Validação |
+  //   10: Cons | 11: Envio | 12: Finalização | 13: Con Finalização |
+  //   14: Chamado atendimento | 15: Chamado Desenvolvimento
   // Layout 'padrao' (Fevereiro/Março):
   //   0: Cliente | 1: Canal | 2: Responsável | 3: Competencia |
-  //   4: Geração ... 10: Con Finalização | 11: Chamado atendimento | 12: Chamado Desenvolvimento
+  //   4: Geração | 5: Tratamento | 6: Validação IA | 7: Validação | 8: Cons |
+  //   9: Envio | 10: Finalização | 11: Con Finalização |
+  //   12: Chamado atendimento | 13: Chamado Desenvolvimento
   const IDX = (layout === 'janeiro')
-    ? { cli: 1, can: 2, resp: 3, step: 6, chamAt: 13, chamDev: 14 }
-    : { cli: 0, can: 1, resp: 2, step: 4, chamAt: 11, chamDev: 12 };
+    ? { cli: 1, can: 2, resp: 3, step: 6, chamAt: 14, chamDev: 15 }
+    : { cli: 0, can: 1, resp: 2, step: 4, chamAt: 12, chamDev: 13 };
 
   const out = [];
   for (let i = 1; i < rows.length; i++) {
@@ -164,7 +177,13 @@ function lerAba_(ss, nome, layout) {
       responsavel: normText_(r[IDX.resp], 'Não definido')
     };
     for (let s = 0; s < ETAPAS.length; s++) {
-      rec[ETAPAS[s]] = normStatus_(r[IDX.step + s]);
+      let v = normStatus_(r[IDX.step + s]);
+      // Regra de negócio: para certas etapas, "Não realizado" significa que
+      // a etapa não se aplica a esse município — deve contar como concluída.
+      if (ETAPAS_NAO_REALIZADO_CONCLUI[ETAPAS[s]] && v === 'Não realizado') {
+        v = 'Concluído';
+      }
+      rec[ETAPAS[s]] = v;
     }
     rec.chamado_atendimento = extrairLink_(r[IDX.chamAt]);
     rec.chamado_desenv      = extrairLink_(r[IDX.chamDev]);
@@ -181,10 +200,12 @@ function normStatus_(v) {
   if (/^\[.*\]/.test(s))       return 'Chamado aberto';
   const l = s.toLowerCase();
   if (/conclu[ií]d/.test(l))       return 'Concluído';
+  if (/n[aã]o\s*realizad/.test(l)) return 'Não realizado';
   if (/n[aã]o\s*inicia/.test(l))   return 'Não iniciado';
   if (/em\s*andamento/.test(l))    return 'Em andamento';
   if (/incidente/.test(l))         return 'Incidente';
   if (/erro/.test(l))              return 'Erro de dado';
+  if (/^pendent/.test(l))          return 'Não iniciado';
   if (/envio de 2025/.test(l))     return 'Pendência 2025';
   return s.substring(0, 60);
 }
@@ -294,6 +315,12 @@ function snapshotDiario() {
   sheet.getRange('A:A').setNumberFormat('@');
   sheet.getRange('C:C').setNumberFormat('@');
 
+  // Idempotente: se a planilha de histórico foi criada antes de 'Validação IA'
+  // ser adicionada ao schema, escreve apenas o cabeçalho da nova coluna (col 18 / R)
+  // sem mexer em nenhuma linha de dado antiga. Os snapshots anteriores ficam com
+  // essa coluna vazia — preenchida a partir do próximo snapshotDiario.
+  garantirColunaValidacaoIA_(sheet);
+
   const agora = new Date();
   const dataStr = Utilities.formatDate(agora, TZ, 'yyyy-MM-dd');
   // Timestamp no fuso de Brasília (mais legível na planilha do que ISO/UTC)
@@ -328,7 +355,8 @@ function snapshotDiario() {
         progresso,
         situacao,
         rec.chamado_atendimento || '',
-        rec.chamado_desenv || ''
+        rec.chamado_desenv || '',
+        rec['Validação IA']  // 17 (no final por compatibilidade com histórico antigo)
       ]);
     });
   });
@@ -339,6 +367,23 @@ function snapshotDiario() {
   }
 
   Logger.log('Snapshot ' + dataStr + ': ' + linhas.length + ' linhas gravadas.');
+}
+
+/**
+ * Idempotente: garante que a coluna 18 (R) da aba de histórico tenha o
+ * cabeçalho "Validação IA". Não toca em linhas de dado — snapshots antigos
+ * seguem preservados, só ficam com essa coluna em branco até o próximo
+ * snapshotDiario preencher.
+ */
+function garantirColunaValidacaoIA_(sheet) {
+  const colIdx = HISTORICO_HEADERS.indexOf('Validação IA') + 1; // 1-based
+  if (colIdx < 1) return;
+  const atual = sheet.getRange(1, colIdx).getValue();
+  if (String(atual || '').trim() === 'Validação IA') return;
+  sheet.getRange(1, colIdx).setValue('Validação IA')
+    .setFontWeight('bold')
+    .setBackground('#1e3a8a')
+    .setFontColor('#ffffff');
 }
 
 function removerLinhasDaData_(sheet, dataStr) {
@@ -417,6 +462,10 @@ function lerHistoricoLinhas_() {
         compStr = String(compStr || '').trim();
       }
 
+      // Validação IA foi adicionada no índice 17; snapshots antigos não a
+      // possuem — cai em 'Sem dado' para não quebrar agregações.
+      let validacaoIA = String(r[17] || '').trim();
+      if (!validacaoIA) validacaoIA = 'Sem dado';
       out.push({
         data: dataStr,
         timestamp: String(r[1] || ''),
@@ -426,6 +475,7 @@ function lerHistoricoLinhas_() {
         responsavel: String(r[5] || ''),
         'Geração': String(r[6] || ''),
         'Tratamento de dados': String(r[7] || ''),
+        'Validação IA': validacaoIA,
         'Validação': String(r[8] || ''),
         'Cons': String(r[9] || ''),
         'Envio': String(r[10] || ''),
@@ -527,6 +577,7 @@ function lerHistoricoPorData_(dataStr) {
       responsavel: r.responsavel,
       'Geração': r['Geração'],
       'Tratamento de dados': r['Tratamento de dados'],
+      'Validação IA': r['Validação IA'],
       'Validação': r['Validação'],
       'Cons': r['Cons'],
       'Envio': r['Envio'],
