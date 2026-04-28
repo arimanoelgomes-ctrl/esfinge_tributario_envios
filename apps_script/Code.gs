@@ -19,7 +19,9 @@
  *  2. Clicar em "Executar". Autorizar permissões do Drive se pedir.
  *     Isso cria a planilha "E-sfinge Historico" no seu Drive e salva o ID.
  *  3. Selecionar a função "configurarTrigger" e clicar em "Executar".
- *     Isso agenda o snapshot diário automático entre 15h e 16h.
+ *     Isso agenda o snapshot automático em 4 horários por dia (10h, 12h, 15h e 18h,
+ *     em America/Sao_Paulo). Cada execução do mesmo dia SOBRESCREVE a anterior, então
+ *     o histórico mantém apenas a visão mais recente do dia.
  *  4. Opcional: rodar "snapshotDiario" manualmente uma vez para já ter o primeiro dia.
  *
  * Como atualizar o código (sem gerar URL nova): Implantar > Gerenciar implantações
@@ -270,6 +272,13 @@ function setupHistorico() {
  * Agendamento do snapshot diário
  * ===================================================================== */
 
+// Horários (em America/Sao_Paulo) em que o snapshotDiario é executado.
+// O Google entrega o gatilho dentro de uma janela de ~1h em torno do horário,
+// então 10h cai entre 10h-11h, 12h entre 12h-13h, etc.
+// Cada execução do mesmo dia SOBRESCREVE a anterior (removerLinhasDaData_),
+// mantendo apenas a versão mais recente do dia no histórico.
+const SNAPSHOT_HOURS = [10, 12, 15, 18];
+
 function configurarTrigger() {
   // Remove triggers antigos da função snapshotDiario
   const triggers = ScriptApp.getProjectTriggers();
@@ -281,17 +290,20 @@ function configurarTrigger() {
     }
   });
 
-  // Cria novo gatilho às 15:30 (o Google garante entre 15h e 16h)
-  ScriptApp.newTrigger('snapshotDiario')
-    .timeBased()
-    .atHour(15)
-    .nearMinute(30)
-    .everyDays(1)
-    .inTimezone(TZ)
-    .create();
+  // Cria um gatilho time-based para cada horário em SNAPSHOT_HOURS.
+  SNAPSHOT_HOURS.forEach(function (h) {
+    ScriptApp.newTrigger('snapshotDiario')
+      .timeBased()
+      .atHour(h)
+      .everyDays(1)
+      .inTimezone(TZ)
+      .create();
+  });
 
-  Logger.log('Trigger de snapshotDiario reconfigurado (' + removidos + ' antigos removidos).');
-  Logger.log('Execução diária: 15:30 (America/Sao_Paulo), janela real 15h-16h.');
+  Logger.log('Triggers de snapshotDiario reconfigurados.');
+  Logger.log('  Removidos: ' + removidos + ' antigos.');
+  Logger.log('  Criados:   ' + SNAPSHOT_HOURS.length + ' (horas: ' + SNAPSHOT_HOURS.join('h, ') + 'h em ' + TZ + ').');
+  Logger.log('Cada execução do mesmo dia sobrescreve a anterior (1 visão por dia no histórico).');
 }
 
 /* =====================================================================
