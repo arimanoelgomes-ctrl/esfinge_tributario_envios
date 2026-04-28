@@ -45,6 +45,15 @@ const ETAPAS = [
 // (a etapa existe na planilha mas não foi necessária para o município).
 const ETAPAS_NAO_REALIZADO_CONCLUI = { 'Validação IA': true };
 
+// Etapas em que NÃO entram no cálculo de "Concluído integralmente" nem no
+// progresso geral. 'Validação IA' fica fora porque nem todos os municípios
+// precisam dela (ex.: os que foram finalizados antes da coluna existir).
+// Ela continua aparecendo na tabela e nos gráficos por etapa.
+const ETAPAS_FORA_CONCLUSAO = { 'Validação IA': true };
+const ETAPAS_OBRIGATORIAS = ETAPAS.filter(function (e) {
+  return !ETAPAS_FORA_CONCLUSAO[e];
+});
+
 const HISTORICO_NAME = 'E-sfinge Historico';
 const HISTORICO_TAB  = 'Snapshots';
 // IMPORTANTE: 'Validação IA' foi adicionada no FINAL (índice 17) para manter
@@ -418,10 +427,25 @@ function removerLinhasDaData_(sheet, dataStr) {
   linhasParaRemover.forEach(function (r) { sheet.deleteRow(r); });
 }
 
+/**
+ * statuses chega na ORDEM de ETAPAS — usamos essa correspondência para excluir
+ * as etapas listadas em ETAPAS_FORA_CONCLUSAO do cálculo. Hoje só 'Validação IA'
+ * fica fora: a coluna nem sempre é preenchida (em particular, municípios que
+ * já tinham finalizado os envios antes da coluna existir).
+ */
+function statusesObrigatorios_(statuses) {
+  const out = [];
+  for (let i = 0; i < ETAPAS.length && i < statuses.length; i++) {
+    if (!ETAPAS_FORA_CONCLUSAO[ETAPAS[i]]) out.push(statuses[i]);
+  }
+  return out;
+}
+
 function calcularProgressoPct_(statuses) {
+  const filtrados = statusesObrigatorios_(statuses);
   let concluidas = 0;
   let total = 0;
-  statuses.forEach(function (s) {
+  filtrados.forEach(function (s) {
     if (s !== 'Sem dado') {
       total++;
       if (s === 'Concluído') concluidas++;
@@ -431,7 +455,11 @@ function calcularProgressoPct_(statuses) {
 }
 
 function calcularSituacaoGeral_(statuses, chamAt, chamDev) {
-  const validos = statuses.filter(function (s) { return s !== 'Sem dado'; });
+  const filtrados = statusesObrigatorios_(statuses);
+  const validos = filtrados.filter(function (s) { return s !== 'Sem dado'; });
+  // Chamados/incidentes ainda consideram TODAS as etapas — Validação IA com
+  // incidente, por exemplo, deve ser sinalizada na situação geral, mesmo
+  // não bloqueando a marcação de "Concluído".
   const hasChamado = !!(chamAt || chamDev) || statuses.some(function (s) { return s === 'Chamado aberto'; });
   const hasIncidente = statuses.some(function (s) { return s === 'Incidente' || s === 'Erro de dado'; });
 

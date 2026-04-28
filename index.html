@@ -443,6 +443,12 @@ const ETAPAS = ['Geração','Tratamento de dados','Validação IA','Validação'
 // Etapas em que o status "Não realizado" deve contar como concluído
 // (a etapa existe na planilha mas não é obrigatória para o município).
 const ETAPAS_NAO_REALIZADO_CONCLUI = { 'Validação IA': true };
+// Etapas que NÃO entram no cálculo de "Concluído integralmente" nem no
+// progresso geral. 'Validação IA' fica fora porque nem todos os municípios
+// precisam dela (ex.: os que foram finalizados antes da coluna existir).
+// A etapa segue aparecendo na tabela e nos gráficos por etapa.
+const ETAPAS_FORA_CONCLUSAO = { 'Validação IA': true };
+const ETAPAS_OBRIGATORIAS = ETAPAS.filter(e => !ETAPAS_FORA_CONCLUSAO[e]);
 const COMPETENCIAS = ['01/2026','02/2026','03/2026'];
 
 const STATUS_COLORS = {
@@ -683,12 +689,18 @@ let chartHistProgresso, chartHistEtapas;
    Helpers
    ===================================================== */
 function computeOverall(rec){
-  const vals = ETAPAS.map(e=>rec[e]);
+  // 'every' (Concluído / Não iniciado / Sem dado) usa apenas as etapas
+  // obrigatórias — Validação IA fica fora porque nem todos os municípios a
+  // preenchem. As demais condições (incidente, chamado, andamento parcial)
+  // ainda consideram TODAS as etapas, para sinalizar problemas mesmo na
+  // Validação IA quando ela existir.
+  const vals    = ETAPAS.map(e=>rec[e]);
+  const valsObr = ETAPAS_OBRIGATORIAS.map(e=>rec[e]);
   const has = v => vals.includes(v);
   if(has('Incidente')||has('Chamado aberto')||has('Erro de dado')) return 'incidente';
-  if(vals.every(v=>v==='Concluído')) return 'concluido';
-  if(vals.every(v=>v==='Não iniciado')) return 'naoiniciado';
-  if(vals.every(v=>v==='Sem dado')) return 'semdado';
+  if(valsObr.every(v=>v==='Concluído')) return 'concluido';
+  if(valsObr.every(v=>v==='Não iniciado')) return 'naoiniciado';
+  if(valsObr.every(v=>v==='Sem dado')) return 'semdado';
   if(has('Concluído')||has('Em andamento')) return 'andamento';
   if(has('Não iniciado')) return 'naoiniciado';
   return 'semdado';
@@ -720,8 +732,10 @@ function aplicarRegrasEtapa(byComp){
 }
 
 function computeProgress(rec){
-  let d=0; ETAPAS.forEach(e=>{if(rec[e]==='Concluído') d++;});
-  return Math.round(100*d/ETAPAS.length);
+  // Progresso conta apenas etapas obrigatórias — Validação IA fica de fora
+  // pelos mesmos motivos descritos em ETAPAS_FORA_CONCLUSAO.
+  let d=0; ETAPAS_OBRIGATORIAS.forEach(e=>{if(rec[e]==='Concluído') d++;});
+  return Math.round(100*d/ETAPAS_OBRIGATORIAS.length);
 }
 function getFiltered(){
   const base = DATA[state.competencia] || [];
