@@ -210,14 +210,19 @@ function normStatus_(v) {
   if (/^https?:\/\//i.test(s)) return 'Chamado aberto';
   if (/^\[.*\]/.test(s))       return 'Chamado aberto';
   const l = s.toLowerCase();
-  if (/conclu[ií]d/.test(l))       return 'Concluído';
-  if (/n[aã]o\s*realizad/.test(l)) return 'Não realizado';
-  if (/n[aã]o\s*inicia/.test(l))   return 'Não iniciado';
-  if (/em\s*andamento/.test(l))    return 'Em andamento';
-  if (/incidente/.test(l))         return 'Incidente';
-  if (/erro/.test(l))              return 'Erro de dado';
-  if (/^pendent/.test(l))          return 'Não iniciado';
-  if (/envio de 2025/.test(l))     return 'Pendência 2025';
+  if (/conclu[ií]d/.test(l))                return 'Concluído';
+  if (/n[aã]o\s*realizad/.test(l))          return 'Não realizado';
+  if (/n[aã]o\s*inicia/.test(l))            return 'Não iniciado';
+  if (/em\s*andamento/.test(l))             return 'Em andamento';
+  // Status específicos novos vêm ANTES da regra genérica de "erro" para
+  // não serem capturados como "Erro de dado".
+  if (/erro.*(con|ratifica)/.test(l))       return 'Erro CON/Ratificação';
+  // dif.*n[çc]a pega tanto "diferença" quanto o typo "difernça" e "diferenca".
+  if (/dif.*n[cç]a/.test(l))                return 'Diferença %';
+  if (/incidente/.test(l))                  return 'Incidente';
+  if (/erro/.test(l))                       return 'Erro de dado';
+  if (/^pendent/.test(l))                   return 'Não iniciado';
+  if (/envio de 2025/.test(l))              return 'Pendência 2025';
   return s.substring(0, 60);
 }
 
@@ -461,7 +466,14 @@ function calcularSituacaoGeral_(statuses, chamAt, chamDev) {
   // incidente, por exemplo, deve ser sinalizada na situação geral, mesmo
   // não bloqueando a marcação de "Concluído".
   const hasChamado = !!(chamAt || chamDev) || statuses.some(function (s) { return s === 'Chamado aberto'; });
-  const hasIncidente = statuses.some(function (s) { return s === 'Incidente' || s === 'Erro de dado'; });
+  // Tipos de "incidente" para a situação geral. Inclui os novos status
+  // específicos (Erro CON/Ratificação, Diferença %).
+  const hasIncidente = statuses.some(function (s) {
+    return s === 'Incidente'
+        || s === 'Erro de dado'
+        || s === 'Erro CON/Ratificação'
+        || s === 'Diferença %';
+  });
 
   if (validos.length === 0) return 'Não iniciado';
   if (validos.every(function (s) { return s === 'Concluído'; })) return 'Concluído';

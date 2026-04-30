@@ -154,6 +154,8 @@ td.client{font-weight:600;white-space:nowrap}
 .chip.incidente{background:rgba(239,68,68,.15);color:#fca5a5;border-color:rgba(239,68,68,.35)}
 .chip.chamado{background:rgba(139,92,246,.15);color:#c4b5fd;border-color:rgba(139,92,246,.4)}
 .chip.erro{background:rgba(249,115,22,.15);color:#fdba74;border-color:rgba(249,115,22,.4)}
+.chip.erroconratif{background:rgba(190,18,60,.18);color:#fda4af;border-color:rgba(190,18,60,.45)}
+.chip.diferenca{background:rgba(236,72,153,.15);color:#f9a8d4;border-color:rgba(236,72,153,.4)}
 .chip.semdado{background:rgba(148,163,184,.1);color:var(--text-dim);border-color:rgba(148,163,184,.25)}
 .chip.pendencia{background:rgba(139,92,246,.15);color:#c4b5fd;border-color:rgba(139,92,246,.35)}
 
@@ -397,6 +399,8 @@ footer{margin-top:30px;text-align:center;color:var(--text-dim);font-size:12px;pa
       <span><i style="background:#ef4444"></i> Incidente</span>
       <span><i style="background:#8b5cf6"></i> Chamado aberto</span>
       <span><i style="background:#f97316"></i> Erro de dado</span>
+      <span><i style="background:#be123c"></i> Erro CON/Ratificação</span>
+      <span><i style="background:#ec4899"></i> Diferença %</span>
       <span><i style="background:#94a3b8"></i> Sem dado</span>
     </div>
     <div class="tbl-wrap">
@@ -458,12 +462,15 @@ const STATUS_COLORS = {
   'Incidente':'#ef4444',
   'Chamado aberto':'#8b5cf6',
   'Erro de dado':'#f97316',
+  'Erro CON/Ratificação':'#be123c',
+  'Diferença %':'#ec4899',
   'Sem dado':'#94a3b8',
   'Pendência 2025':'#a78bfa'
 };
 const STATUS_CHIP = {
   'Concluído':'concluido','Em andamento':'andamento','Não iniciado':'naoiniciado',
   'Incidente':'incidente','Chamado aberto':'chamado','Erro de dado':'erro',
+  'Erro CON/Ratificação':'erroconratif','Diferença %':'diferenca',
   'Sem dado':'semdado','Pendência 2025':'pendencia'
 };
 const OVERALL_ORDER = ['concluido','andamento','incidente','naoiniciado','semdado'];
@@ -507,6 +514,11 @@ function normStatus(v){
   if(/n[aã]o\s*realizad/.test(l)) return 'Não realizado';
   if(/n[aã]o\s*inicia/.test(l)) return 'Não iniciado';
   if(/em\s*andamento/.test(l)) return 'Em andamento';
+  // Status específicos antes da regra genérica de "erro" para não serem
+  // capturados como "Erro de dado".
+  if(/erro.*(con|ratifica)/.test(l)) return 'Erro CON/Ratificação';
+  // dif.*n[çc]a pega tanto "diferença" quanto o typo "difernça" e "diferenca".
+  if(/dif.*n[cç]a/.test(l)) return 'Diferença %';
   if(/incidente/.test(l)) return 'Incidente';
   if(/erro/.test(l)) return 'Erro de dado';
   if(/^pendent/.test(l)) return 'Não iniciado';
@@ -697,7 +709,7 @@ function computeOverall(rec){
   const vals    = ETAPAS.map(e=>rec[e]);
   const valsObr = ETAPAS_OBRIGATORIAS.map(e=>rec[e]);
   const has = v => vals.includes(v);
-  if(has('Incidente')||has('Chamado aberto')||has('Erro de dado')) return 'incidente';
+  if(has('Incidente')||has('Chamado aberto')||has('Erro de dado')||has('Erro CON/Ratificação')||has('Diferença %')) return 'incidente';
   if(valsObr.every(v=>v==='Concluído')) return 'concluido';
   if(valsObr.every(v=>v==='Não iniciado')) return 'naoiniciado';
   if(valsObr.every(v=>v==='Sem dado')) return 'semdado';
@@ -855,7 +867,7 @@ function renderEvolucao(){
 
 function renderEtapa(){
   const rows = getFiltered();
-  const statusKeys = ['Concluído','Em andamento','Não iniciado','Incidente','Chamado aberto','Erro de dado','Sem dado'];
+  const statusKeys = ['Concluído','Em andamento','Não iniciado','Incidente','Chamado aberto','Erro de dado','Erro CON/Ratificação','Diferença %','Sem dado'];
   const datasets = statusKeys.map(s=>({
     label:s, data: ETAPAS.map(e=> rows.filter(r=>r[e]===s).length),
     backgroundColor: STATUS_COLORS[s], borderWidth:0, borderRadius:4
