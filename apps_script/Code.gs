@@ -33,7 +33,8 @@ const SHEET_ID = '1BkynLo9QFgdwnHgtGwj6ouo6wtKMN8Lod9Reskke9h4';
 const TABS = [
   { competencia: '01/2026', nome: 'Clientes_Janeiro',   layout: 'janeiro' },
   { competencia: '02/2026', nome: 'Clientes_Fevereiro', layout: 'padrao'  },
-  { competencia: '03/2026', nome: 'Clientes_Março',     layout: 'padrao'  }
+  { competencia: '03/2026', nome: 'Clientes_Março',     layout: 'padrao'  },
+  { competencia: '04/2026', nome: 'Clientes_Abril',     layout: 'padrao'  }
 ];
 
 const ETAPAS = [

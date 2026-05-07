@@ -284,6 +284,7 @@ footer{margin-top:30px;text-align:center;color:var(--text-dim);font-size:12px;pa
         <option value="01/2026">01/2026 — Janeiro</option>
         <option value="02/2026">02/2026 — Fevereiro</option>
         <option value="03/2026">03/2026 — Março</option>
+        <option value="04/2026">04/2026 — Abril</option>
       </select>
     </div>
     <div>
@@ -346,7 +347,7 @@ footer{margin-top:30px;text-align:center;color:var(--text-dim);font-size:12px;pa
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
         <div>
           <h3>Evolução entre competências</h3>
-          <div class="sub">Percentual de municípios em cada situação geral — 01/2026, 02/2026 e 03/2026</div>
+          <div class="sub">Percentual de municípios em cada situação geral — 01/2026, 02/2026, 03/2026 e 04/2026</div>
         </div>
         <div class="toggle-group" id="evoToggle">
           <button data-mode="pct" class="active">%</button>
@@ -441,7 +442,8 @@ const SHEET_ID = '1BkynLo9QFgdwnHgtGwj6ouo6wtKMN8Lod9Reskke9h4';
 const SHEET_TABS = {
   '01/2026': { gid: '0',          layout: 'janeiro'   },
   '02/2026': { gid: '1841245082', layout: 'padrao'    },
-  '03/2026': { gid: '1102792864', layout: 'padrao'    }
+  '03/2026': { gid: '1102792864', layout: 'padrao'    },
+  '04/2026': { gid: '1394504968', layout: 'padrao'    }
 };
 const ETAPAS = ['Geração','Tratamento de dados','Validação IA','Validação','Cons','Envio','Finalização','Con Finalização'];
 // Etapas em que o status "Não realizado" deve contar como concluído
@@ -453,7 +455,7 @@ const ETAPAS_NAO_REALIZADO_CONCLUI = { 'Validação IA': true };
 // A etapa segue aparecendo na tabela e nos gráficos por etapa.
 const ETAPAS_FORA_CONCLUSAO = { 'Validação IA': true };
 const ETAPAS_OBRIGATORIAS = ETAPAS.filter(e => !ETAPAS_FORA_CONCLUSAO[e]);
-const COMPETENCIAS = ['01/2026','02/2026','03/2026'];
+const COMPETENCIAS = ['01/2026','02/2026','03/2026','04/2026'];
 
 const STATUS_COLORS = {
   'Concluído':'#10b981',
