@@ -294,6 +294,26 @@ footer{margin-top:30px;text-align:center;color:var(--text-dim);font-size:12px;pa
        ============================================================ -->
   <div id="tabGeral" class="tab-content active">
 
+  <!-- ============================================================
+       Card de Envios por competência — TOTAIS CONSOLIDADOS da aba
+       auxiliar da planilha (não reage aos filtros abaixo).
+       ============================================================ -->
+  <section>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+        <div>
+          <h3>Envios por competência</h3>
+          <div class="sub">Totais consolidados de envios concluídos e pendentes por mês · não reage aos filtros abaixo</div>
+        </div>
+        <div class="toggle-group" id="evoToggle">
+          <button data-mode="pct" class="active">%</button>
+          <button data-mode="abs">Absoluto</button>
+        </div>
+      </div>
+      <div class="chart-wrap tall"><canvas id="chartEvolucao"></canvas></div>
+    </div>
+  </section>
+
   <!-- Filters -->
   <section class="filters" aria-label="Filtros">
     <div>
@@ -331,22 +351,6 @@ footer{margin-top:30px;text-align:center;color:var(--text-dim);font-size:12px;pa
   </section>
 
   <section class="kpis" id="kpis"></section>
-
-  <section>
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
-        <div>
-          <h3>Evolução entre competências</h3>
-          <div class="sub">Percentual de municípios em cada situação geral — 01/2026, 02/2026, 03/2026 e 04/2026</div>
-        </div>
-        <div class="toggle-group" id="evoToggle">
-          <button data-mode="pct" class="active">%</button>
-          <button data-mode="abs">Absoluto</button>
-        </div>
-      </div>
-      <div class="chart-wrap tall"><canvas id="chartEvolucao"></canvas></div>
-    </div>
-  </section>
 
   <section class="grid-2">
     <div class="card">
@@ -723,6 +727,10 @@ const state = {
 };
 let chartEvolucao, chartEtapa, chartGeral, chartCanal, chartResp;
 let chartHistProgresso, chartHistEtapas;
+// Resumo consolidado de envios (vem do payload, lido da aba auxiliar
+// gid=1620662734 da planilha-fonte). Cada item:
+// { mes, competencia, enviado, falta_enviar, total }
+let RESUMO_CONSOLIDADO = [];
 
 /* =====================================================
    Helpers
@@ -857,32 +865,50 @@ Chart.defaults.color = '#94a3b8';
 Chart.defaults.borderColor = 'rgba(148,163,184,.12)';
 Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif';
 
+/**
+ * "Envios por competência" — totais consolidados manuais mantidos pela
+ * equipe na aba auxiliar da planilha (gid=1620662734), expostos pelo
+ * Apps Script em payload.resumo. NÃO REAGE aos filtros do topo da
+ * página, propositalmente: é uma visão geral fixa.
+ */
 function renderEvolucao(){
-  const labels = COMPETENCIAS;
-  const datasets = OVERALL_ORDER.map(k=>{
-    const data = COMPETENCIAS.map(c=>{
-      const rows = (DATA[c]||[]).filter(r=>{
-        if(state.canal && r.canal!==state.canal) return false;
-        if(state.responsavel && r.responsavel!==state.responsavel) return false;
-        return true;
-      });
-      const count = rows.filter(r=>computeOverall(r)===k).length;
-      return state.evoMode==='pct' ? (rows.length? Math.round(1000*count/rows.length)/10 : 0) : count;
-    });
-    return {label:OVERALL_LABEL[k], data, backgroundColor:OVERALL_COLOR[k], borderRadius:6, borderWidth:0};
+  const resumo = Array.isArray(RESUMO_CONSOLIDADO) ? RESUMO_CONSOLIDADO : [];
+  const labels = resumo.map(r => `${r.competencia} · ${r.mes}`);
+  const enviado = resumo.map(r => Number(r.enviado) || 0);
+  const falta   = resumo.map(r => Number(r.falta_enviar) || 0);
+  const totais  = resumo.map((_, i) => enviado[i] + falta[i]);
+
+  const toMode = arr => arr.map((v, i) => {
+    if (state.evoMode === 'pct') return totais[i] ? Math.round(1000*v/totais[i])/10 : 0;
+    return v;
   });
+
+  const datasets = [
+    { label: 'Enviado',       data: toMode(enviado), backgroundColor: '#10b981', borderRadius: 6, borderWidth: 0 },
+    { label: 'Falta enviar',  data: toMode(falta),   backgroundColor: '#64748b', borderRadius: 6, borderWidth: 0 }
+  ];
+
   if(chartEvolucao) chartEvolucao.destroy();
   chartEvolucao = new Chart(document.getElementById('chartEvolucao'),{
     type:'bar',
-    data:{labels,datasets},
+    data:{labels, datasets},
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{
         legend:{position:'bottom', labels:{boxWidth:12,boxHeight:12,padding:12}},
-        tooltip:{callbacks:{label:ctx=>{
-          const suffix = state.evoMode==='pct'?'%':' municípios';
-          return `${ctx.dataset.label}: ${ctx.parsed.y}${suffix}`;
-        }}}
+        tooltip:{callbacks:{
+          label: ctx => {
+            const i = ctx.dataIndex;
+            const raw = ctx.dataset.label === 'Enviado' ? enviado[i] : falta[i];
+            const t = totais[i];
+            const pct = t ? Math.round(1000*raw/t)/10 : 0;
+            return `${ctx.dataset.label}: ${raw} municípios · ${pct}%`;
+          },
+          afterBody: items => {
+            const i = items[0].dataIndex;
+            return `Total: ${totais[i]}`;
+          }
+        }}
       },
       scales:{
         x:{stacked:true, grid:{display:false}},
@@ -1301,6 +1327,7 @@ async function refreshData(firstLoad=false){
     if(total===0) throw new Error('Planilha retornou 0 linhas.');
     DATA_AO_VIVO = dataAtual;
     HISTORICO_AGREGADO = Array.isArray(fresh.historico_agregado) ? fresh.historico_agregado : [];
+    RESUMO_CONSOLIDADO = Array.isArray(fresh.resumo) ? fresh.resumo : [];
     // Se o usuário estava vendo uma data histórica, mantém; caso contrário, volta pra "hoje"
     if(state.dataAlvo && HISTORICO_AGREGADO.some(r=>r.data===state.dataAlvo)){
       await aplicarSnapshotHistorico(state.dataAlvo);

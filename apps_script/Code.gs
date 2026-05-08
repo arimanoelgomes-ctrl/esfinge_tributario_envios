@@ -30,6 +30,14 @@
 
 const SHEET_ID = '1BkynLo9QFgdwnHgtGwj6ouo6wtKMN8Lod9Reskke9h4';
 
+// Aba auxiliar com totais consolidados de envios por mês.
+// Estrutura esperada (cols A:B):
+//   Linha 1:  "Mês" | "Qnt enviada"
+//   Linhas 2-5: meses (Janeiro/Fevereiro/Março/Abril) | totais
+//   Linha 8:  "Mês" | "Qnt que falta enviar"
+//   Linhas 9-12: meses | totais
+const SHEET_RESUMO_GID = 1620662734;
+
 const TABS = [
   { competencia: '01/2026', nome: 'Clientes_Janeiro',   layout: 'janeiro' },
   { competencia: '02/2026', nome: 'Clientes_Fevereiro', layout: 'padrao'  },
@@ -112,14 +120,16 @@ function doGet(e) {
       payload = {
         ok: true,
         generatedAt: new Date().toISOString(),
-        data: coletarDados_()
+        data: coletarDados_(),
+        resumo: lerResumoConsolidado_()
       };
     } else {
-      // "all" → atual + agregado histórico
+      // "all" → atual + agregado histórico + resumo consolidado de envios
       payload = {
         ok: true,
         generatedAt: new Date().toISOString(),
         data: coletarDados_(),
+        resumo: lerResumoConsolidado_(),
         historico_agregado: agregarHistoricoDiario_()
       };
     }
@@ -155,6 +165,76 @@ function coletarDados_() {
     saida[tab.competencia] = lerAba_(ss, tab.nome, tab.layout);
   });
   return saida;
+}
+
+/**
+ * Lê a aba auxiliar de "Resumo / consolidado de envios" (totais manuais
+ * por mês mantidos pela equipe), independente das abas Clientes_*.
+ * Retorna um array por competência, com quantidades enviadas e que faltam
+ * enviar — alimenta o card "Envios por competência" no topo da dashboard.
+ *
+ * É lido por busca pelo gid (não pelo nome da aba) para tolerar renomeações.
+ */
+function lerResumoConsolidado_() {
+  try {
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    const sheets = ss.getSheets();
+    let sheet = null;
+    for (let i = 0; i < sheets.length; i++) {
+      if (sheets[i].getSheetId() === SHEET_RESUMO_GID) { sheet = sheets[i]; break; }
+    }
+    if (!sheet) return [];
+
+    const lastRow = Math.max(2, Math.min(sheet.getLastRow(), 30));
+    const rows = sheet.getRange(1, 1, lastRow, 2).getValues();
+
+    // Varredura com detector de bloco: ao encontrar uma linha com "Mês" na
+    // coluna A, o cabeçalho da B define se as linhas seguintes são "enviada"
+    // ou "falta enviar".
+    const enviada = {};
+    const falta   = {};
+    let modo = null;
+    for (let i = 0; i < rows.length; i++) {
+      const a = String(rows[i][0] || '').trim();
+      const b = rows[i][1];
+      if (!a) { modo = null; continue; } // linha em branco quebra o bloco
+      const al = a.toLowerCase();
+      if (al === 'mês' || al === 'mes') {
+        const bs = String(b || '').toLowerCase();
+        if (/falta/.test(bs))         modo = 'falta';
+        else if (/enviad/.test(bs))   modo = 'enviada';
+        else                          modo = null;
+        continue;
+      }
+      if (modo === null) continue;
+      const qnt = Number(b);
+      if (!isFinite(qnt)) continue;
+      if (modo === 'enviada') enviada[al] = qnt;
+      else if (modo === 'falta') falta[al] = qnt;
+    }
+
+    const meses = [
+      { nome: 'Janeiro',   competencia: '01/2026' },
+      { nome: 'Fevereiro', competencia: '02/2026' },
+      { nome: 'Março',     competencia: '03/2026' },
+      { nome: 'Abril',     competencia: '04/2026' }
+    ];
+
+    return meses.map(function (m) {
+      const k = m.nome.toLowerCase();
+      const env = enviada[k] || 0;
+      const flt = falta[k]   || 0;
+      return {
+        mes: m.nome,
+        competencia: m.competencia,
+        enviado: env,
+        falta_enviar: flt,
+        total: env + flt
+      };
+    });
+  } catch (e) {
+    return [];
+  }
 }
 
 function lerAba_(ss, nome, layout) {
