@@ -734,6 +734,58 @@ function teste() {
   });
 }
 
+/**
+ * Diagnóstico da aba "Resumo / consolidado de envios".
+ * RODAR NO EDITOR DO APPS SCRIPT (selecionar a função "testeResumo" e
+ * clicar em Executar) — vai imprimir nos Logs:
+ *   1. Lista de TODAS as abas com nome e gid (pra confirmar qual é o gid certo)
+ *   2. Resultado de lerResumoConsolidado_() — array com 4 meses
+ *   3. Mensagem de erro detalhada se algo falhar
+ * Cole o output aqui pra eu identificar o problema.
+ */
+function testeResumo() {
+  try {
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    Logger.log('Planilha aberta: ' + ss.getName());
+    Logger.log('SHEET_RESUMO_GID configurado: ' + SHEET_RESUMO_GID);
+    Logger.log('--- Abas disponíveis ---');
+    ss.getSheets().forEach(function (s) {
+      Logger.log('  nome="' + s.getName() + '"  gid=' + s.getSheetId());
+    });
+
+    Logger.log('--- Procurando a aba pelo gid ' + SHEET_RESUMO_GID + ' ---');
+    let alvo = null;
+    ss.getSheets().forEach(function (s) {
+      if (s.getSheetId() === SHEET_RESUMO_GID) alvo = s;
+    });
+    if (!alvo) {
+      Logger.log('AVISO: nenhuma aba com gid=' + SHEET_RESUMO_GID + ' encontrada.');
+      Logger.log('  Verifique a URL da aba no navegador (gid=...). Se o número for diferente,');
+      Logger.log('  ajuste a constante SHEET_RESUMO_GID no topo do Code.gs.');
+    } else {
+      Logger.log('Aba encontrada: "' + alvo.getName() + '" (gid=' + alvo.getSheetId() + ')');
+      Logger.log('  Última linha: ' + alvo.getLastRow() + ' · Última coluna: ' + alvo.getLastColumn());
+      const lr = Math.min(alvo.getLastRow(), 14);
+      if (lr > 0) {
+        const valores = alvo.getRange(1, 1, lr, 2).getValues();
+        Logger.log('  Conteúdo bruto A1:B' + lr + ':');
+        valores.forEach(function (row, i) {
+          Logger.log('    linha ' + (i + 1) + ': A=' + JSON.stringify(row[0]) + '  B=' + JSON.stringify(row[1]));
+        });
+      }
+    }
+
+    Logger.log('--- Resultado de lerResumoConsolidado_ ---');
+    const r = lerResumoConsolidado_();
+    Logger.log('  Length: ' + r.length);
+    r.forEach(function (item) {
+      Logger.log('  ' + JSON.stringify(item));
+    });
+  } catch (e) {
+    Logger.log('ERRO: ' + e + '\n' + (e && e.stack));
+  }
+}
+
 function testeHistorico() {
   const a = agregarHistoricoDiario_();
   Logger.log('Dias x competências agregados: ' + a.length);

@@ -306,8 +306,8 @@ footer{margin-top:30px;text-align:center;color:var(--text-dim);font-size:12px;pa
           <div class="sub">Totais consolidados de envios concluídos e pendentes por mês · não reage aos filtros abaixo</div>
         </div>
         <div class="toggle-group" id="evoToggle">
-          <button data-mode="pct" class="active">%</button>
-          <button data-mode="abs">Absoluto</button>
+          <button data-mode="pct">%</button>
+          <button data-mode="abs" class="active">Absoluto</button>
         </div>
       </div>
       <div class="chart-wrap tall"><canvas id="chartEvolucao"></canvas></div>
@@ -720,7 +720,7 @@ let HISTORICO_AGREGADO = [];  // [{data, competencia, total, concluidos, progres
 const state = {
   competencia:'01/2026', canal:'', responsavel:'', situacao:'', busca:'',
   sort:{key:'cliente',dir:'asc'},
-  evoMode:'pct',
+  evoMode:'abs',
   dataAlvo:'',       // '' = hoje (ao vivo); 'YYYY-MM-DD' = snapshot histórico
   histMode:'progresso', // progresso | concluidos | abs
   tab:'geral'        // 'geral' | 'historico'
@@ -1328,6 +1328,15 @@ async function refreshData(firstLoad=false){
     DATA_AO_VIVO = dataAtual;
     HISTORICO_AGREGADO = Array.isArray(fresh.historico_agregado) ? fresh.historico_agregado : [];
     RESUMO_CONSOLIDADO = Array.isArray(fresh.resumo) ? fresh.resumo : [];
+    // Diagnóstico do card "Envios por competência" (resumo da aba auxiliar).
+    // Se vier vazio, conferir testeResumo() no editor do Apps Script.
+    console.log('[esfinge] payload recebido:', {
+      tem_data: !!fresh.data,
+      tem_resumo: 'resumo' in fresh,
+      resumo_length: RESUMO_CONSOLIDADO.length,
+      resumo: RESUMO_CONSOLIDADO,
+      historico_length: HISTORICO_AGREGADO.length
+    });
     // Se o usuário estava vendo uma data histórica, mantém; caso contrário, volta pra "hoje"
     if(state.dataAlvo && HISTORICO_AGREGADO.some(r=>r.data===state.dataAlvo)){
       await aplicarSnapshotHistorico(state.dataAlvo);
