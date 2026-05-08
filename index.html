@@ -129,6 +129,13 @@ section{margin-bottom:22px}
 .toggle-group button{background:transparent;color:var(--text-dim);border:0;padding:6px 10px;font-size:12px;border-radius:6px;cursor:pointer}
 .toggle-group button.active{background:var(--brand);color:#fff}
 
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:20px;flex-wrap:wrap}
+.tab{background:transparent;border:0;color:var(--text-dim);padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s,border-color .15s;letter-spacing:.2px}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--text);border-bottom-color:var(--brand-2)}
+.tab-content{display:none}
+.tab-content.active{display:block}
+
 /* Table */
 .tbl-wrap{overflow:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface);max-height:640px}
 table{width:100%;border-collapse:collapse;font-size:13px;min-width:1100px}
@@ -276,6 +283,17 @@ footer{margin-top:30px;text-align:center;color:var(--text-dim);font-size:12px;pa
 
   <div id="banner" class="banner"></div>
 
+  <!-- Tabs -->
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="geral" role="tab">Geral</button>
+    <button class="tab" data-tab="historico" role="tab">Evolução Histórica</button>
+  </div>
+
+  <!-- ============================================================
+       Aba Geral (filtros, KPIs, comparativos por competência atual)
+       ============================================================ -->
+  <div id="tabGeral" class="tab-content active">
+
   <!-- Filters -->
   <section class="filters" aria-label="Filtros">
     <div>
@@ -313,34 +331,6 @@ footer{margin-top:30px;text-align:center;color:var(--text-dim);font-size:12px;pa
   </section>
 
   <section class="kpis" id="kpis"></section>
-
-  <!-- ============================================================
-       Evolução histórica (snapshots diários do Apps Script)
-       ============================================================ -->
-  <section class="card" id="histSection">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
-      <div>
-        <h3>Evolução histórica · progresso diário</h3>
-        <div class="sub">Progresso médio dos municípios ao longo do tempo, por competência <span id="histInfo" style="color:var(--text-dim)"></span></div>
-      </div>
-      <div class="toggle-group" id="histToggle">
-        <button data-mode="progresso" class="active">Progresso médio (%)</button>
-        <button data-mode="concluidos">% Concluídos</button>
-        <button data-mode="abs">Qtd. Concluídos</button>
-      </div>
-    </div>
-    <div class="chart-wrap tall"><canvas id="chartHistProgresso"></canvas></div>
-  </section>
-
-  <section class="card">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
-      <div>
-        <h3>Evolução histórica · por etapa</h3>
-        <div class="sub">% de municípios com cada etapa concluída ao longo do tempo — competência selecionada no filtro abaixo</div>
-      </div>
-    </div>
-    <div class="chart-wrap tall"><canvas id="chartHistEtapas"></canvas></div>
-  </section>
 
   <section>
     <div class="card">
@@ -428,6 +418,40 @@ footer{margin-top:30px;text-align:center;color:var(--text-dim);font-size:12px;pa
       </table>
     </div>
   </section>
+
+  </div><!-- /#tabGeral -->
+
+  <!-- ============================================================
+       Aba Evolução Histórica (snapshots diários do Apps Script)
+       ============================================================ -->
+  <div id="tabHistorico" class="tab-content">
+
+  <section class="card" id="histSection">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+      <div>
+        <h3>Evolução histórica · progresso diário</h3>
+        <div class="sub">Progresso médio dos municípios ao longo do tempo, por competência <span id="histInfo" style="color:var(--text-dim)"></span></div>
+      </div>
+      <div class="toggle-group" id="histToggle">
+        <button data-mode="progresso" class="active">Progresso médio (%)</button>
+        <button data-mode="concluidos">% Concluídos</button>
+        <button data-mode="abs">Qtd. Concluídos</button>
+      </div>
+    </div>
+    <div class="chart-wrap tall"><canvas id="chartHistProgresso"></canvas></div>
+  </section>
+
+  <section class="card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+      <div>
+        <h3>Evolução histórica · por etapa</h3>
+        <div class="sub">% de municípios com cada etapa concluída ao longo do tempo — competência selecionada na aba "Geral"</div>
+      </div>
+    </div>
+    <div class="chart-wrap tall"><canvas id="chartHistEtapas"></canvas></div>
+  </section>
+
+  </div><!-- /#tabHistorico -->
 
   <footer>
     Dashboard Executivo · Carteira Betha Sistemas · <a href="https://docs.google.com/spreadsheets/d/1BkynLo9QFgdwnHgtGwj6ouo6wtKMN8Lod9Reskke9h4/edit" target="_blank">Abrir planilha fonte</a>
@@ -694,7 +718,8 @@ const state = {
   sort:{key:'cliente',dir:'asc'},
   evoMode:'pct',
   dataAlvo:'',       // '' = hoje (ao vivo); 'YYYY-MM-DD' = snapshot histórico
-  histMode:'progresso' // progresso | concluidos | abs
+  histMode:'progresso', // progresso | concluidos | abs
+  tab:'geral'        // 'geral' | 'historico'
 };
 let chartEvolucao, chartEtapa, chartGeral, chartCanal, chartResp;
 let chartHistProgresso, chartHistEtapas;
@@ -1385,6 +1410,27 @@ document.getElementById('fData').addEventListener('change', e => {
   aplicarSnapshotHistorico(e.target.value);
 });
 document.getElementById('btnRefresh').addEventListener('click',()=>refreshData(false));
+
+/* Tabs (Geral / Evolução Histórica) */
+document.querySelectorAll('.tabs .tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const t = btn.dataset.tab;
+    if (state.tab === t) return;
+    state.tab = t;
+    document.querySelectorAll('.tabs .tab').forEach(b =>
+      b.classList.toggle('active', b.dataset.tab === t)
+    );
+    document.querySelectorAll('.tab-content').forEach(c => {
+      const id = c.id;
+      const matches = (t === 'geral' && id === 'tabGeral')
+                   || (t === 'historico' && id === 'tabHistorico');
+      c.classList.toggle('active', matches);
+    });
+    // Recria os charts da aba que acabou de ficar visível — Chart.js não
+    // renderiza corretamente em canvas oculto (display:none).
+    renderAll();
+  });
+});
 
 /* Boot */
 refreshData(true);
