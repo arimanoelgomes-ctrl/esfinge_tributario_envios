@@ -676,12 +676,13 @@ async function loadViaGviz(){
     const rows = await fetchTabCSV(cfg.gid);
     result[comp] = buildRecords(rows, cfg.layout);
   }
-  return { data: result, historico_agregado: [] };
+  return { data: result, historico_agregado: [], resumo: [] };
 }
 
 /**
- * Retorna { data: dadosAtuais, historico_agregado: [...] }
- * Via Apps Script traz ambos em uma só chamada; via gviz só os atuais.
+ * Retorna { data, historico_agregado, resumo } — todos vêm na mesma chamada
+ * do Apps Script. O fallback gviz não tem como produzir "resumo" (depende
+ * da aba auxiliar e do código do Apps Script), então devolve [].
  */
 async function loadAllData(){
   const appsUrl = (window.APPS_SCRIPT_URL || '').trim();
@@ -689,7 +690,8 @@ async function loadAllData(){
     const payload = await loadViaAppsScript(appsUrl);
     return {
       data: payload.data || {},
-      historico_agregado: payload.historico_agregado || []
+      historico_agregado: payload.historico_agregado || [],
+      resumo: payload.resumo || []
     };
   }
   return await loadViaGviz();
