@@ -199,6 +199,42 @@ function coletarDados_() {
  *
  * É lido por busca pelo gid (não pelo nome da aba) para tolerar renomeações.
  */
+/**
+ * Detecta o "tipo" de uma coluna pelo texto do cabeçalho. A ordem das regras
+ * importa — testar os mais específicos primeiro (ex: "falta enviar" antes de
+ * "enviada", "a ratificar" antes de "ratificado") para não pegar match errado.
+ */
+function classificarColunaResumo_(cabecalho) {
+  const s = String(cabecalho || '').toLowerCase().trim();
+  if (!s) return null;
+  if (/falta.*envia/.test(s))         return 'falta';
+  if (/a\s+ratificar/.test(s))        return 'aratificar';
+  if (/ratificad/.test(s))            return 'ratificado';
+  if (/enviad/.test(s))               return 'enviado';
+  return null;
+}
+
+/**
+ * Lê a aba auxiliar de "Resumo / consolidado de envios" (totais manuais por
+ * mês mantidos pela equipe).
+ *
+ * Tolera estruturas heterogêneas — duas vistas conhecidas hoje:
+ *
+ *   ESTRUTURA ANTIGA (2 blocos verticais, 2 colunas)        ESTRUTURA NOVA (1 linha de cabeçalho, n colunas)
+ *   ────────────────────────────────────────                ────────────────────────────────────────────────
+ *   Mês        | Qnt enviada                                 Mês  | Qnt enviada | Qnt que falta enviar | ...
+ *   Janeiro    | 145                                         Janeiro | 145 | 0
+ *   ...                                                      Maio    | 98  | 47
+ *   (linha em branco)
+ *   Mês        | Qnt que falta enviar
+ *   Janeiro    | 0
+ *   ...
+ *
+ * Algoritmo: varre até encontrar uma linha com "Mês" na col A. Lê o cabeçalho
+ * inteiro daquela linha e descobre qual coluna corresponde a qual métrica
+ * (enviado/falta/ratificado/aratificar). Depois lê as linhas seguintes até
+ * uma linha em branco, gravando os valores. Suporta múltiplos blocos.
+ */
 function lerResumoConsolidado_() {
   try {
     const ss = SpreadsheetApp.openById(SHEET_ID);
@@ -209,32 +245,40 @@ function lerResumoConsolidado_() {
     }
     if (!sheet) return [];
 
-    const lastRow = Math.max(2, Math.min(sheet.getLastRow(), 30));
-    const rows = sheet.getRange(1, 1, lastRow, 2).getValues();
+    const lastRow = Math.max(2, Math.min(sheet.getLastRow(), 100));
+    const lastCol = Math.max(2, Math.min(sheet.getLastColumn(), 8));
+    const rows = sheet.getRange(1, 1, lastRow, lastCol).getValues();
 
-    // Varredura com detector de bloco: ao encontrar uma linha com "Mês" na
-    // coluna A, o cabeçalho da B define se as linhas seguintes são "enviada"
-    // ou "falta enviar".
-    const enviada = {};
-    const falta   = {};
-    let modo = null;
-    for (let i = 0; i < rows.length; i++) {
-      const a = String(rows[i][0] || '').trim();
-      const b = rows[i][1];
-      if (!a) { modo = null; continue; } // linha em branco quebra o bloco
-      const al = a.toLowerCase();
-      if (al === 'mês' || al === 'mes') {
-        const bs = String(b || '').toLowerCase();
-        if (/falta/.test(bs))         modo = 'falta';
-        else if (/enviad/.test(bs))   modo = 'enviada';
-        else                          modo = null;
+    // dados[mesLower] = { enviado, falta, ratificado, aratificar }
+    const dados = {};
+
+    let i = 0;
+    while (i < rows.length) {
+      const a = String(rows[i][0] || '').trim().toLowerCase();
+      if (a === 'mês' || a === 'mes') {
+        // Mapeia cada coluna B..N do cabeçalho ao tipo de métrica
+        const tipos = [];
+        for (let c = 1; c < lastCol; c++) {
+          tipos.push(classificarColunaResumo_(rows[i][c]));
+        }
+        // Lê as linhas de dados até linha em branco
+        i++;
+        while (i < rows.length) {
+          const m = String(rows[i][0] || '').trim();
+          if (!m) break;
+          const ml = m.toLowerCase();
+          if (!dados[ml]) dados[ml] = {};
+          for (let c = 1; c < lastCol; c++) {
+            const tipo = tipos[c - 1];
+            if (!tipo) continue;
+            const v = Number(rows[i][c]);
+            if (isFinite(v)) dados[ml][tipo] = v;
+          }
+          i++;
+        }
         continue;
       }
-      if (modo === null) continue;
-      const qnt = Number(b);
-      if (!isFinite(qnt)) continue;
-      if (modo === 'enviada') enviada[al] = qnt;
-      else if (modo === 'falta') falta[al] = qnt;
+      i++;
     }
 
     const meses = [
@@ -246,14 +290,18 @@ function lerResumoConsolidado_() {
     ];
 
     return meses.map(function (m) {
-      const k = m.nome.toLowerCase();
-      const env = enviada[k] || 0;
-      const flt = falta[k]   || 0;
+      const d = dados[m.nome.toLowerCase()] || {};
+      const env = d.enviado || 0;
+      const flt = d.falta   || 0;
+      const rat = d.ratificado  || 0;
+      const ar  = d.aratificar  || 0;
       return {
         mes: m.nome,
         competencia: m.competencia,
         enviado: env,
         falta_enviar: flt,
+        ratificado: rat,
+        a_ratificar: ar,
         total: env + flt
       };
     });
