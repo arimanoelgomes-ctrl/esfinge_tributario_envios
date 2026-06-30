@@ -28,13 +28,19 @@ Planilha: **E-sfinge 2026** — <https://docs.google.com/spreadsheets/d/1BkynLo9
 
 Abas utilizadas:
 
-| Competência | Aba                    | gid            |
-|-------------|------------------------|----------------|
-| 01/2026     | `Clientes_Janeiro`     | `0`            |
-| 02/2026     | `Clientes_Fevereiro`   | `1841245082`   |
-| 03/2026     | `Clientes_Março`       | `1102792864`   |
+| Competência | Aba                    | gid            | Layout      |
+|-------------|------------------------|----------------|-------------|
+| 01/2026     | `Clientes_Janeiro`     | `0`            | `janeiro`   |
+| 02/2026     | `Clientes_Fevereiro`   | `1841245082`   | `padrao`    |
+| 03/2026     | `Clientes_Março`       | `1102792864`   | `padrao`    |
+| 04/2026     | `Clientes_Abril`       | `1394504968`   | `padrao`    |
+| 05/2026     | `Clientes_Maio`        | `517392875`    | `maio`      |
 
-Colunas lidas: `Cliente`, `Canal`, `Responsável`, `Competência`, `Geração`, `Tratamento de Dados`, `Validação`, `Cons`, `Envio`, `Finalização`, `Con Finalização`, `Chamado atendimento`, `Chamado Desenvolvimento`.
+Colunas lidas nos layouts `janeiro` e `padrao`: `Cliente`, `Canal`, `Responsável`, `Competência`, `Geração`, `Tratamento de Dados`, `Validação IA`, `Validação`, `Cons`, `Envio`, `Finalização`, `Con Finalização`, `Chamado atendimento`, `Chamado Desenvolvimento`.
+
+A partir de **05/2026** o TCE-SC simplificou o fluxo. O layout `maio` lê apenas: `Cliente`, `Canal`, `Competencia`, `Envio`, `Ratificado geral` (sem Responsável e sem colunas de Chamado). Etapas que não existem nessa competência aparecem como **Sem dado** e não entram no cálculo de progresso; o card **Responsáveis por volume** é ocultado quando 05/2026 está selecionada, e a coluna "Responsável" da tabela aparece como "—".
+
+> Para adicionar novas competências com colunas diferentes no futuro, edite `layoutConfig_` em `apps_script/Code.gs`, `layoutConfig` em `index.html`, e atualize `ETAPAS_POR_COMP` (em ambos) para mapear quais etapas existem na nova competência.
 
 ---
 

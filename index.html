@@ -372,7 +372,7 @@ footer{margin-top:30px;text-align:center;color:var(--text-dim);font-size:12px;pa
       <div class="sub">Conclusão por canal para a competência selecionada</div>
       <div class="chart-wrap tall"><canvas id="chartCanal"></canvas></div>
     </div>
-    <div class="card">
+    <div class="card" id="cardResp">
       <h3>Responsáveis por volume</h3>
       <div class="sub">Todas as carteiras · distribuição por Concluído, Em andamento e Pendente</div>
       <div class="chart-wrap tall" id="chartRespWrap"><canvas id="chartResp"></canvas></div>
@@ -407,14 +407,16 @@ footer{margin-top:30px;text-align:center;color:var(--text-dim);font-size:12px;pa
             <th data-sort="responsavel">Responsável</th>
             <th data-sort="progresso">Progresso</th>
             <th data-sort="situacao">Situação</th>
-            <th>Geração</th>
-            <th>Tratamento</th>
-            <th>Validação IA</th>
-            <th>Validação</th>
-            <th>Cons</th>
-            <th>Envio</th>
-            <th>Finalização</th>
-            <th>Con Finalização</th>
+            <!-- Colunas de etapas: visíveis conforme a competência (renderTable). -->
+            <th class="th-etapa" data-etapa="Geração">Geração</th>
+            <th class="th-etapa" data-etapa="Tratamento de dados">Tratamento</th>
+            <th class="th-etapa" data-etapa="Validação IA">Validação IA</th>
+            <th class="th-etapa" data-etapa="Validação">Validação</th>
+            <th class="th-etapa" data-etapa="Cons">Cons</th>
+            <th class="th-etapa" data-etapa="Envio">Envio</th>
+            <th class="th-etapa" data-etapa="Finalização">Finalização</th>
+            <th class="th-etapa" data-etapa="Con Finalização">Con Finalização</th>
+            <th class="th-etapa" data-etapa="Ratificado geral">Ratificado</th>
             <th>Chamados</th>
           </tr>
         </thead>
@@ -471,9 +473,12 @@ const SHEET_TABS = {
   '01/2026': { gid: '0',          layout: 'janeiro'   },
   '02/2026': { gid: '1841245082', layout: 'padrao'    },
   '03/2026': { gid: '1102792864', layout: 'padrao'    },
-  '04/2026': { gid: '1394504968', layout: 'padrao'    }
+  '04/2026': { gid: '1394504968', layout: 'padrao'    },
+  '05/2026': { gid: '517392875',  layout: 'maio'      }
 };
-const ETAPAS = ['Geração','Tratamento de dados','Validação IA','Validação','Cons','Envio','Finalização','Con Finalização'];
+// Conjunto global de etapas — inclui as 8 do fluxo padrão + 'Ratificado geral'
+// introduzida em 05/2026. Cada competência usa só um subconjunto (ETAPAS_POR_COMP).
+const ETAPAS = ['Geração','Tratamento de dados','Validação IA','Validação','Cons','Envio','Finalização','Con Finalização','Ratificado geral'];
 // Etapas em que o status "Não realizado" deve contar como concluído
 // (a etapa existe na planilha mas não é obrigatória para o município).
 const ETAPAS_NAO_REALIZADO_CONCLUI = { 'Validação IA': true };
@@ -483,7 +488,22 @@ const ETAPAS_NAO_REALIZADO_CONCLUI = { 'Validação IA': true };
 // A etapa segue aparecendo na tabela e nos gráficos por etapa.
 const ETAPAS_FORA_CONCLUSAO = { 'Validação IA': true };
 const ETAPAS_OBRIGATORIAS = ETAPAS.filter(e => !ETAPAS_FORA_CONCLUSAO[e]);
-const COMPETENCIAS = ['01/2026','02/2026','03/2026','04/2026'];
+const COMPETENCIAS = ['01/2026','02/2026','03/2026','04/2026','05/2026'];
+
+// Mapa competência -> etapas que ela realmente usa. Etapas fora do mapa
+// ficam como 'Sem dado' nos registros e não entram em cálculos.
+// A partir de 05/2026 o TCE-SC simplificou o fluxo (só Envio + Ratificado geral).
+const ETAPAS_POR_COMP = {
+  '01/2026': ['Geração','Tratamento de dados','Validação IA','Validação','Cons','Envio','Finalização','Con Finalização'],
+  '02/2026': ['Geração','Tratamento de dados','Validação IA','Validação','Cons','Envio','Finalização','Con Finalização'],
+  '03/2026': ['Geração','Tratamento de dados','Validação IA','Validação','Cons','Envio','Finalização','Con Finalização'],
+  '04/2026': ['Geração','Tratamento de dados','Validação IA','Validação','Cons','Envio','Finalização','Con Finalização'],
+  '05/2026': ['Envio','Ratificado geral']
+};
+function etapasDaComp(comp){ return ETAPAS_POR_COMP[comp] || ETAPAS; }
+function etapasObrigatoriasDaComp(comp){
+  return etapasDaComp(comp).filter(e => !ETAPAS_FORA_CONCLUSAO[e]);
+}
 
 const STATUS_COLORS = {
   'Concluído':'#10b981',
@@ -564,35 +584,58 @@ function normText(v, fallback){
 /* =====================================================
    Build records from parsed CSV
    ===================================================== */
-function buildRecords(rows, layout){
+function layoutConfig(layout){
+  // Layout 'janeiro' (Clientes_Janeiro): tem Ordem de Prioridade e Sala de Guerra extras.
+  if(layout==='janeiro') return {
+    cli:1, can:2, resp:3,
+    etapas:{'Geração':6,'Tratamento de dados':7,'Validação IA':8,'Validação':9,'Cons':10,'Envio':11,'Finalização':12,'Con Finalização':13},
+    chamAt:14, chamDev:15
+  };
+  // Layout 'padrao' (Fevereiro/Março/Abril).
+  if(layout==='padrao') return {
+    cli:0, can:1, resp:2,
+    etapas:{'Geração':4,'Tratamento de dados':5,'Validação IA':6,'Validação':7,'Cons':8,'Envio':9,'Finalização':10,'Con Finalização':11},
+    chamAt:12, chamDev:13
+  };
+  // Layout 'maio' (Clientes_Maio — fluxo simplificado: só Envio e Ratificado geral,
+  // sem Responsável e sem colunas de Chamado).
+  if(layout==='maio') return {
+    cli:0, can:1,
+    etapas:{'Envio':3,'Ratificado geral':4}
+  };
+  throw new Error('Layout desconhecido: '+layout);
+}
+
+function buildRecords(rows, layout, comp){
   const out=[];
   if(!rows.length) return out;
-  const headerRow = rows[0];
-  // Column indices — layout 'janeiro' tem 'Ordem de Prioridade' (col 0) e
-  // 'Sala de Guerra' (col 4) extras em relação ao layout padrão. Ambos
-  // layouts agora incluem 'Validação IA' entre 'Tratamento de dados' e
-  // 'Validação', o que empurra chamAt/chamDev em +1.
-  const IDX = (layout==='janeiro')
-    ? {cli:1,can:2,resp:3,step:6,chamAt:14,chamDev:15}
-    : {cli:0,can:1,resp:2,step:4,chamAt:12,chamDev:13};
+  const cfg = layoutConfig(layout);
 
   for(let i=1;i<rows.length;i++){
     const r = rows[i];
-    const cli = (r[IDX.cli]||'').trim();
+    const cli = (r[cfg.cli]||'').trim();
     if(!cli) continue;
     const rec = {
+      _comp: comp,
       cliente: cli.toUpperCase(),
-      canal: normText(r[IDX.can],'Sem canal'),
-      responsavel: normText(r[IDX.resp],'Não definido'),
+      canal: normText(r[cfg.can],'Sem canal'),
+      responsavel: (cfg.resp!==undefined) ? normText(r[cfg.resp],'Não definido') : 'Não aplicável'
     };
-    for(let s=0;s<ETAPAS.length;s++){
-      let v = normStatus(r[IDX.step+s]);
-      if(ETAPAS_NAO_REALIZADO_CONCLUI[ETAPAS[s]] && v === 'Não realizado') v = 'Concluído';
-      rec[ETAPAS[s]] = v;
-    }
-    const cAt = r[IDX.chamAt], cDev = r[IDX.chamDev];
-    rec.chamado_atendimento = cAt && /^https?:\/\//i.test(cAt.trim()) ? cAt.trim() : null;
-    rec.chamado_desenv = cDev && /^https?:\/\//i.test(cDev.trim()) ? cDev.trim() : null;
+    // Inicializa todas as etapas globais como 'Sem dado'; sobrescreve com as do layout.
+    ETAPAS.forEach(e=>{ rec[e] = 'Sem dado'; });
+    Object.keys(cfg.etapas).forEach(e=>{
+      let v = normStatus(r[cfg.etapas[e]]);
+      if(ETAPAS_NAO_REALIZADO_CONCLUI[e] && v === 'Não realizado') v = 'Concluído';
+      rec[e] = v;
+    });
+    if(cfg.chamAt!==undefined){
+      const cAt = r[cfg.chamAt];
+      rec.chamado_atendimento = cAt && /^https?:\/\//i.test(String(cAt).trim()) ? String(cAt).trim() : null;
+    } else { rec.chamado_atendimento = null; }
+    if(cfg.chamDev!==undefined){
+      const cDev = r[cfg.chamDev];
+      rec.chamado_desenv = cDev && /^https?:\/\//i.test(String(cDev).trim()) ? String(cDev).trim() : null;
+    } else { rec.chamado_desenv = null; }
     out.push(rec);
   }
   return out;
@@ -674,7 +717,7 @@ async function loadViaGviz(){
   const result = {};
   for(const [comp, cfg] of Object.entries(SHEET_TABS)){
     const rows = await fetchTabCSV(cfg.gid);
-    result[comp] = buildRecords(rows, cfg.layout);
+    result[comp] = buildRecords(rows, cfg.layout, comp);
   }
   return { data: result, historico_agregado: [], resumo: [] };
 }
@@ -738,15 +781,18 @@ let RESUMO_CONSOLIDADO = [];
    Helpers
    ===================================================== */
 function computeOverall(rec){
-  // 'every' (Concluído / Não iniciado / Sem dado) usa apenas as etapas
-  // obrigatórias — Validação IA fica fora porque nem todos os municípios a
-  // preenchem. As demais condições (incidente, chamado, andamento parcial)
-  // ainda consideram TODAS as etapas, para sinalizar problemas mesmo na
-  // Validação IA quando ela existir.
-  const vals    = ETAPAS.map(e=>rec[e]);
-  const valsObr = ETAPAS_OBRIGATORIAS.map(e=>rec[e]);
+  // Considera só as etapas relevantes da competência do registro. 'every'
+  // (Concluído/Não iniciado/Sem dado) usa apenas as obrigatórias da
+  // competência. As demais condições (incidente, chamado, andamento parcial)
+  // varrem todas as etapas relevantes — Validação IA com incidente, por
+  // exemplo, sinaliza problema mesmo não bloqueando a marcação de Concluído.
+  const etapasRel = etapasDaComp(rec._comp);
+  const etapasObr = etapasObrigatoriasDaComp(rec._comp);
+  const vals    = etapasRel.map(e=>rec[e]);
+  const valsObr = etapasObr.map(e=>rec[e]);
   const has = v => vals.includes(v);
   if(has('Incidente')||has('Chamado aberto')||has('Erro de dado')||has('Erro CON/Ratificação')||has('Diferença %')) return 'incidente';
+  if(!valsObr.length) return 'semdado';
   if(valsObr.every(v=>v==='Concluído')) return 'concluido';
   if(valsObr.every(v=>v==='Não iniciado')) return 'naoiniciado';
   if(valsObr.every(v=>v==='Sem dado')) return 'semdado';
@@ -763,28 +809,39 @@ function computeOverall(rec){
  */
 function aplicarRegrasEtapa(byComp){
   if(!byComp || typeof byComp !== 'object') return byComp;
-  Object.values(byComp).forEach(arr=>{
+  Object.keys(byComp).forEach(comp=>{
+    const arr = byComp[comp];
     if(!Array.isArray(arr)) return;
     arr.forEach(rec=>{
       if(!rec) return;
-      // 1) Se faltar alguma etapa (payload antigo, fallback pré-Validação IA),
-      //    preenche com 'Sem dado' para não quebrar computeOverall/Progress.
+      // 0) Anexa a competência ao registro — necessário para computeOverall/
+      //    computeProgress saberem quais etapas são relevantes nesse fluxo
+      //    (05/2026 só tem Envio + Ratificado geral, p.ex).
+      if(!rec._comp) rec._comp = comp;
+      // 1) Se faltar alguma etapa (payload antigo, fallback pré-Validação IA
+      //    ou snapshot de antes do upgrade), preenche com 'Sem dado'.
       ETAPAS.forEach(e=>{ if(rec[e] === undefined) rec[e] = 'Sem dado'; });
       // 2) Aplica regra: "Não realizado" conta como "Concluído" nas etapas
       //    mapeadas em ETAPAS_NAO_REALIZADO_CONCLUI.
       Object.keys(ETAPAS_NAO_REALIZADO_CONCLUI).forEach(etapa=>{
         if(rec[etapa] === 'Não realizado') rec[etapa] = 'Concluído';
       });
+      // 3) Layouts sem responsável (ex: 05/2026) viram 'Não aplicável'.
+      if(rec.responsavel === undefined || rec.responsavel === ''){
+        rec.responsavel = 'Não aplicável';
+      }
     });
   });
   return byComp;
 }
 
 function computeProgress(rec){
-  // Progresso conta apenas etapas obrigatórias — Validação IA fica de fora
-  // pelos mesmos motivos descritos em ETAPAS_FORA_CONCLUSAO.
-  let d=0; ETAPAS_OBRIGATORIAS.forEach(e=>{if(rec[e]==='Concluído') d++;});
-  return Math.round(100*d/ETAPAS_OBRIGATORIAS.length);
+  // Progresso conta apenas etapas obrigatórias da COMPETÊNCIA do registro
+  // (cada competência pode ter um conjunto diferente).
+  const etapasObr = etapasObrigatoriasDaComp(rec._comp);
+  if(!etapasObr.length) return 0;
+  let d=0; etapasObr.forEach(e=>{if(rec[e]==='Concluído') d++;});
+  return Math.round(100*d/etapasObr.length);
 }
 function getFiltered(){
   const base = DATA[state.competencia] || [];
@@ -806,7 +863,11 @@ function getFiltered(){
 function populateFilterOptions(){
   const canais = new Set(), resps = new Set();
   COMPETENCIAS.forEach(c=>{
-    (DATA[c]||[]).forEach(r=>{canais.add(r.canal); resps.add(r.responsavel)});
+    (DATA[c]||[]).forEach(r=>{
+      canais.add(r.canal);
+      // Não polui o filtro com 'Não aplicável' (competência sem responsável, ex: 05/2026)
+      if(r.responsavel && r.responsavel !== 'Não aplicável') resps.add(r.responsavel);
+    });
   });
   const selC = document.getElementById('fCanal');
   const selR = document.getElementById('fResponsavel');
@@ -922,15 +983,17 @@ function renderEvolucao(){
 
 function renderEtapa(){
   const rows = getFiltered();
+  // Só mostra etapas que existem na competência selecionada.
+  const etapasRel = etapasDaComp(state.competencia);
   const statusKeys = ['Concluído','Em andamento','Não iniciado','Incidente','Chamado aberto','Erro de dado','Erro CON/Ratificação','Diferença %','Sem dado'];
   const datasets = statusKeys.map(s=>({
-    label:s, data: ETAPAS.map(e=> rows.filter(r=>r[e]===s).length),
+    label:s, data: etapasRel.map(e=> rows.filter(r=>r[e]===s).length),
     backgroundColor: STATUS_COLORS[s], borderWidth:0, borderRadius:4
   }));
   if(chartEtapa) chartEtapa.destroy();
   chartEtapa = new Chart(document.getElementById('chartEtapa'),{
     type:'bar',
-    data:{labels:ETAPAS, datasets},
+    data:{labels:etapasRel, datasets},
     options:{
       indexAxis:'y', responsive:true, maintainAspectRatio:false,
       plugins:{legend:{position:'bottom', labels:{boxWidth:12,boxHeight:12,padding:10}}},
@@ -996,8 +1059,20 @@ function renderCanal(){
 
 function renderResp(){
   const rows = getFiltered();
+  // Se a competência não tem responsável (ex: 05/2026 — fluxo simplificado),
+  // oculta todo o card.
+  const card = document.getElementById('cardResp');
+  const temResp = rows.some(r => r.responsavel && r.responsavel !== 'Não aplicável');
+  if(card){
+    card.style.display = temResp ? '' : 'none';
+    if(!temResp){
+      if(chartResp){ chartResp.destroy(); chartResp = null; }
+      return;
+    }
+  }
   const byR = {};
   rows.forEach(r=>{
+    if(r.responsavel === 'Não aplicável') return;
     if(!byR[r.responsavel]) byR[r.responsavel]={total:0,concluido:0,andamento:0,pendente:0};
     const o = computeOverall(r);
     byR[r.responsavel].total++;
@@ -1062,6 +1137,14 @@ function chipHtml(status){
 function renderTable(){
   const rows = getFiltered();
   const {key,dir} = state.sort;
+  const etapasRel = etapasDaComp(state.competencia);
+  const etapasRelSet = new Set(etapasRel);
+
+  // Mostra só os <th> de etapas relevantes pra essa competência.
+  document.querySelectorAll('#tbl thead th.th-etapa').forEach(th=>{
+    th.style.display = etapasRelSet.has(th.dataset.etapa) ? '' : 'none';
+  });
+
   rows.sort((a,b)=>{
     let va,vb;
     if(key==='progresso'){ va=computeProgress(a); vb=computeProgress(b); }
@@ -1078,13 +1161,16 @@ function renderTable(){
     const chamadoHtml = [];
     if(r.chamado_atendimento) chamadoHtml.push(`<a class="chamado-link" href="${r.chamado_atendimento}" target="_blank">Atendimento ↗</a>`);
     if(r.chamado_desenv) chamadoHtml.push(`<a class="chamado-link" href="${r.chamado_desenv}" target="_blank">Desenvolvimento ↗</a>`);
+    const respCell = (r.responsavel === 'Não aplicável')
+      ? '<span style="color:#64748b">—</span>'
+      : r.responsavel;
     return `<tr>
       <td class="client">${r.cliente}</td>
       <td>${r.canal}</td>
-      <td>${r.responsavel}</td>
+      <td>${respCell}</td>
       <td><span class="progress"><i style="width:${prog}%"></i></span><span class="progress-label">${prog}%</span></td>
       <td><span class="overall ${overall}"><span class="dot"></span>${OVERALL_LABEL[overall]}</span></td>
-      ${ETAPAS.map(e=>`<td>${chipHtml(r[e])}</td>`).join('')}
+      ${etapasRel.map(e=>`<td>${chipHtml(r[e])}</td>`).join('')}
       <td>${chamadoHtml.join('<br>') || '<span style="color:#64748b">—</span>'}</td>
     </tr>`;
   }).join('');
@@ -1230,10 +1316,12 @@ function renderHistEtapas(){
   const porData = {};
   HISTORICO_AGREGADO.filter(r => r.competencia===comp).forEach(r => { porData[r.data] = r; });
 
-  // Cores distintas por etapa
-  const cores = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ef4444','#06b6d4','#84cc16'];
+  // Só séries das etapas que existem na competência (evita ruído de etapas N/A)
+  const etapasRel = etapasDaComp(comp);
+  // Cores distintas por etapa (9 cores pra cobrir as 9 etapas globais possíveis)
+  const cores = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ef4444','#06b6d4','#84cc16','#ec4899','#14b8a6'];
 
-  const datasets = ETAPAS.map((etapa, i) => {
+  const datasets = etapasRel.map((etapa, i) => {
     const serie = datas.map(d => {
       const rec = porData[d];
       if(!rec || !rec.etapas || !rec.etapas[etapa]) return null;

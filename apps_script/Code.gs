@@ -42,13 +42,28 @@ const TABS = [
   { competencia: '01/2026', nome: 'Clientes_Janeiro',   layout: 'janeiro' },
   { competencia: '02/2026', nome: 'Clientes_Fevereiro', layout: 'padrao'  },
   { competencia: '03/2026', nome: 'Clientes_Março',     layout: 'padrao'  },
-  { competencia: '04/2026', nome: 'Clientes_Abril',     layout: 'padrao'  }
+  { competencia: '04/2026', nome: 'Clientes_Abril',     layout: 'padrao'  },
+  { competencia: '05/2026', nome: 'Clientes_Maio',      layout: 'maio'    }
 ];
 
+// Conjunto global de etapas — inclui as 8 etapas do fluxo padrão + 'Ratificado geral'
+// introduzida a partir de 05/2026. Cada competência usa só um subconjunto (ver
+// ETAPAS_POR_COMP). Para etapas que não se aplicam à competência, gravamos 'Sem dado'.
 const ETAPAS = [
   'Geração', 'Tratamento de dados', 'Validação IA', 'Validação',
-  'Cons', 'Envio', 'Finalização', 'Con Finalização'
+  'Cons', 'Envio', 'Finalização', 'Con Finalização',
+  'Ratificado geral'
 ];
+
+// Etapas que cada competência efetivamente usa. Etapas FORA do subconjunto
+// ficam como 'Sem dado' e não entram nos cálculos de progresso/conclusão.
+const ETAPAS_POR_COMP = {
+  '01/2026': ['Geração','Tratamento de dados','Validação IA','Validação','Cons','Envio','Finalização','Con Finalização'],
+  '02/2026': ['Geração','Tratamento de dados','Validação IA','Validação','Cons','Envio','Finalização','Con Finalização'],
+  '03/2026': ['Geração','Tratamento de dados','Validação IA','Validação','Cons','Envio','Finalização','Con Finalização'],
+  '04/2026': ['Geração','Tratamento de dados','Validação IA','Validação','Cons','Envio','Finalização','Con Finalização'],
+  '05/2026': ['Envio','Ratificado geral']
+};
 
 // Etapas em que o status "Não realizado" deve contar como "Concluído"
 // (a etapa existe na planilha mas não foi necessária para o município).
@@ -62,6 +77,14 @@ const ETAPAS_FORA_CONCLUSAO = { 'Validação IA': true };
 const ETAPAS_OBRIGATORIAS = ETAPAS.filter(function (e) {
   return !ETAPAS_FORA_CONCLUSAO[e];
 });
+
+// Helper: etapas obrigatórias da competência (intersecção entre as etapas dela
+// e ETAPAS_OBRIGATORIAS). Usada nos cálculos de progresso/conclusão por
+// município, tolerante a competências com fluxos heterogêneos.
+function etapasObrigatoriasDaComp_(comp) {
+  const lista = ETAPAS_POR_COMP[comp] || ETAPAS;
+  return lista.filter(function (e) { return !ETAPAS_FORA_CONCLUSAO[e]; });
+}
 
 const HISTORICO_NAME = 'E-sfinge Historico';
 const HISTORICO_TAB  = 'Snapshots';
@@ -88,7 +111,8 @@ const HISTORICO_HEADERS = [
   'Situação Geral',     // 14
   'Chamado Atendimento',// 15
   'Chamado Desenvolvimento', // 16
-  'Validação IA'        // 17 (adicionada no final p/ não invalidar histórico antigo)
+  'Validação IA',       // 17 (adicionada no final p/ não invalidar histórico antigo)
+  'Ratificado Geral'    // 18 (etapa nova introduzida em 05/2026, idem)
 ];
 
 const TZ = 'America/Sao_Paulo';
@@ -243,45 +267,102 @@ function lerAba_(ss, nome, layout) {
   const rows = sheet.getDataRange().getValues();
   if (!rows || rows.length < 2) return [];
 
-  // Layout 'janeiro' (aba Clientes_Janeiro) tem 2 colunas extras em relação às demais:
-  //   0: Ordem de Prioridade | 1: Cliente | 2: Canal | 3: Responsável | 4: Sala de Guerra |
-  //   5: Competencia | 6: Geração | 7: Tratamento | 8: Validação IA | 9: Validação |
-  //   10: Cons | 11: Envio | 12: Finalização | 13: Con Finalização |
-  //   14: Chamado atendimento | 15: Chamado Desenvolvimento
-  // Layout 'padrao' (Fevereiro/Março):
-  //   0: Cliente | 1: Canal | 2: Responsável | 3: Competencia |
-  //   4: Geração | 5: Tratamento | 6: Validação IA | 7: Validação | 8: Cons |
-  //   9: Envio | 10: Finalização | 11: Con Finalização |
-  //   12: Chamado atendimento | 13: Chamado Desenvolvimento
-  const IDX = (layout === 'janeiro')
-    ? { cli: 1, can: 2, resp: 3, step: 6, chamAt: 14, chamDev: 15 }
-    : { cli: 0, can: 1, resp: 2, step: 4, chamAt: 12, chamDev: 13 };
+  const cfg = layoutConfig_(layout);
 
   const out = [];
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
-    const cli = String(r[IDX.cli] || '').trim();
+    const cli = String(r[cfg.cli] || '').trim();
     if (!cli) continue;
 
     const rec = {
       cliente: cli.toUpperCase(),
-      canal: normText_(r[IDX.can], 'Sem canal'),
-      responsavel: normText_(r[IDX.resp], 'Não definido')
+      canal: normText_(r[cfg.can], 'Sem canal'),
+      responsavel: (cfg.resp !== undefined)
+        ? normText_(r[cfg.resp], 'Não definido')
+        : 'Não aplicável'
     };
-    for (let s = 0; s < ETAPAS.length; s++) {
-      let v = normStatus_(r[IDX.step + s]);
+    // Inicializa todas as etapas globais como 'Sem dado'; sobrescreve com o
+    // que o layout expõe. Etapas fora do layout permanecem 'Sem dado' e não
+    // entram em cálculos (ver etapasObrigatoriasDaComp_).
+    ETAPAS.forEach(function (e) { rec[e] = 'Sem dado'; });
+    Object.keys(cfg.etapas).forEach(function (e) {
+      let v = normStatus_(r[cfg.etapas[e]]);
       // Regra de negócio: para certas etapas, "Não realizado" significa que
       // a etapa não se aplica a esse município — deve contar como concluída.
-      if (ETAPAS_NAO_REALIZADO_CONCLUI[ETAPAS[s]] && v === 'Não realizado') {
-        v = 'Concluído';
-      }
-      rec[ETAPAS[s]] = v;
-    }
-    rec.chamado_atendimento = extrairLink_(r[IDX.chamAt]);
-    rec.chamado_desenv      = extrairLink_(r[IDX.chamDev]);
+      if (ETAPAS_NAO_REALIZADO_CONCLUI[e] && v === 'Não realizado') v = 'Concluído';
+      rec[e] = v;
+    });
+    rec.chamado_atendimento = (cfg.chamAt !== undefined) ? extrairLink_(r[cfg.chamAt]) : null;
+    rec.chamado_desenv      = (cfg.chamDev !== undefined) ? extrairLink_(r[cfg.chamDev]) : null;
     out.push(rec);
   }
   return out;
+}
+
+/**
+ * Mapa de colunas de cada layout. Layouts diferentes podem ter conjuntos
+ * diferentes de etapas — as omitidas saem como 'Sem dado'.
+ *
+ * Layout 'janeiro' (Clientes_Janeiro) tem 2 colunas extras (Ordem/Sala de Guerra):
+ *   0: Ordem | 1: Cliente | 2: Canal | 3: Responsável | 4: Sala de Guerra |
+ *   5: Competencia | 6: Geração | 7: Tratamento | 8: Validação IA | 9: Validação |
+ *   10: Cons | 11: Envio | 12: Finalização | 13: Con Finalização |
+ *   14: Chamado atendimento | 15: Chamado Desenvolvimento
+ *
+ * Layout 'padrao' (Fevereiro/Março/Abril):
+ *   0: Cliente | 1: Canal | 2: Responsável | 3: Competencia |
+ *   4: Geração | 5: Tratamento | 6: Validação IA | 7: Validação | 8: Cons |
+ *   9: Envio | 10: Finalização | 11: Con Finalização |
+ *   12: Chamado atendimento | 13: Chamado Desenvolvimento
+ *
+ * Layout 'maio' (Clientes_Maio — fluxo simplificado a partir de 05/2026):
+ *   0: Cliente | 1: Canal | 2: Competencia | 3: Envio | 4: Ratificado geral
+ *   (sem Responsável e sem colunas de Chamado)
+ */
+function layoutConfig_(layout) {
+  if (layout === 'janeiro') {
+    return {
+      cli: 1, can: 2, resp: 3,
+      etapas: {
+        'Geração': 6,
+        'Tratamento de dados': 7,
+        'Validação IA': 8,
+        'Validação': 9,
+        'Cons': 10,
+        'Envio': 11,
+        'Finalização': 12,
+        'Con Finalização': 13
+      },
+      chamAt: 14, chamDev: 15
+    };
+  }
+  if (layout === 'padrao') {
+    return {
+      cli: 0, can: 1, resp: 2,
+      etapas: {
+        'Geração': 4,
+        'Tratamento de dados': 5,
+        'Validação IA': 6,
+        'Validação': 7,
+        'Cons': 8,
+        'Envio': 9,
+        'Finalização': 10,
+        'Con Finalização': 11
+      },
+      chamAt: 12, chamDev: 13
+    };
+  }
+  if (layout === 'maio') {
+    return {
+      cli: 0, can: 1,
+      etapas: {
+        'Envio': 3,
+        'Ratificado geral': 4
+      }
+    };
+  }
+  throw new Error('Layout desconhecido: ' + layout);
 }
 
 function normStatus_(v) {
@@ -422,11 +503,10 @@ function snapshotDiario() {
   sheet.getRange('A:A').setNumberFormat('@');
   sheet.getRange('C:C').setNumberFormat('@');
 
-  // Idempotente: se a planilha de histórico foi criada antes de 'Validação IA'
-  // ser adicionada ao schema, escreve apenas o cabeçalho da nova coluna (col 18 / R)
-  // sem mexer em nenhuma linha de dado antiga. Os snapshots anteriores ficam com
-  // essa coluna vazia — preenchida a partir do próximo snapshotDiario.
-  garantirColunaValidacaoIA_(sheet);
+  // Idempotente: garante que TODOS os cabeçalhos do schema atual estejam presentes
+  // (Validação IA, Ratificado Geral, etc.). Não toca em linhas de dados antigas;
+  // colunas novas ficam vazias em snapshots anteriores, preenchidas a partir daqui.
+  garantirCabecalhosHistorico_(sheet);
 
   const agora = new Date();
   const dataStr = Utilities.formatDate(agora, TZ, 'yyyy-MM-dd');
@@ -463,7 +543,8 @@ function snapshotDiario() {
         situacao,
         rec.chamado_atendimento || '',
         rec.chamado_desenv || '',
-        rec['Validação IA']  // 17 (no final por compatibilidade com histórico antigo)
+        rec['Validação IA'],   // 17 (no final por compatibilidade com histórico antigo)
+        rec['Ratificado geral']// 18 (etapa nova introduzida em 05/2026)
       ]);
     });
   });
@@ -477,20 +558,29 @@ function snapshotDiario() {
 }
 
 /**
- * Idempotente: garante que a coluna 18 (R) da aba de histórico tenha o
- * cabeçalho "Validação IA". Não toca em linhas de dado — snapshots antigos
- * seguem preservados, só ficam com essa coluna em branco até o próximo
- * snapshotDiario preencher.
+ * Idempotente: garante que cada cabeçalho de HISTORICO_HEADERS esteja
+ * presente na linha 1 da aba de histórico. Não toca em linhas de dado —
+ * snapshots antigos seguem preservados, só ficam com colunas novas em
+ * branco até o próximo snapshotDiario preencher. Suporta evolução
+ * gradual do schema (Validação IA, Ratificado Geral, futuras etapas).
  */
-function garantirColunaValidacaoIA_(sheet) {
-  const colIdx = HISTORICO_HEADERS.indexOf('Validação IA') + 1; // 1-based
-  if (colIdx < 1) return;
-  const atual = sheet.getRange(1, colIdx).getValue();
-  if (String(atual || '').trim() === 'Validação IA') return;
-  sheet.getRange(1, colIdx).setValue('Validação IA')
-    .setFontWeight('bold')
-    .setBackground('#1e3a8a')
-    .setFontColor('#ffffff');
+function garantirCabecalhosHistorico_(sheet) {
+  const headerRange = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), HISTORICO_HEADERS.length));
+  const existentes = headerRange.getValues()[0];
+  let mudou = false;
+  for (let i = 0; i < HISTORICO_HEADERS.length; i++) {
+    const esperado = HISTORICO_HEADERS[i];
+    if (String(existentes[i] || '').trim() !== esperado) {
+      existentes[i] = esperado;
+      mudou = true;
+    }
+  }
+  if (mudou) {
+    sheet.getRange(1, 1, 1, existentes.length).setValues([existentes])
+      .setFontWeight('bold')
+      .setBackground('#1e3a8a')
+      .setFontColor('#ffffff');
+  }
 }
 
 function removerLinhasDaData_(sheet, dataStr) {
@@ -595,10 +685,13 @@ function lerHistoricoLinhas_() {
         compStr = String(compStr || '').trim();
       }
 
-      // Validação IA foi adicionada no índice 17; snapshots antigos não a
-      // possuem — cai em 'Sem dado' para não quebrar agregações.
+      // Validação IA foi adicionada no índice 17 e Ratificado Geral no 18;
+      // snapshots antigos não os possuem — caem em 'Sem dado' para não
+      // quebrar agregações nem aparecer como "vazio" em séries históricas.
       let validacaoIA = String(r[17] || '').trim();
       if (!validacaoIA) validacaoIA = 'Sem dado';
+      let ratificadoGeral = String(r[18] || '').trim();
+      if (!ratificadoGeral) ratificadoGeral = 'Sem dado';
       out.push({
         data: dataStr,
         timestamp: String(r[1] || ''),
@@ -614,6 +707,7 @@ function lerHistoricoLinhas_() {
         'Envio': String(r[10] || ''),
         'Finalização': String(r[11] || ''),
         'Con Finalização': String(r[12] || ''),
+        'Ratificado geral': ratificadoGeral,
         progresso: Number(r[13]) || 0,
         situacao: String(r[14] || ''),
         chamado_atendimento: String(r[15] || '') || null,
@@ -666,7 +760,10 @@ function agregarHistoricoDiario_() {
       case 'Com incidente': a.com_incidente++; break;
     }
 
-    ETAPAS.forEach(function (e) {
+    // Só conta etapas que existem nessa competência (evita poluir séries
+    // com etapas N/A — ex.: 'Geração' não existe em 05/2026).
+    const etapasRel = ETAPAS_POR_COMP[r.competencia] || ETAPAS;
+    etapasRel.forEach(function (e) {
       const s = r[e];
       const et = a.etapas[e];
       et.total++;
@@ -716,6 +813,7 @@ function lerHistoricoPorData_(dataStr) {
       'Envio': r['Envio'],
       'Finalização': r['Finalização'],
       'Con Finalização': r['Con Finalização'],
+      'Ratificado geral': r['Ratificado geral'] || 'Sem dado',
       chamado_atendimento: r.chamado_atendimento || null,
       chamado_desenv: r.chamado_desenv || null
     });
