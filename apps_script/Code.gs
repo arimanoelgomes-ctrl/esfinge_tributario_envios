@@ -241,7 +241,8 @@ function lerResumoConsolidado_() {
       { nome: 'Janeiro',   competencia: '01/2026' },
       { nome: 'Fevereiro', competencia: '02/2026' },
       { nome: 'Março',     competencia: '03/2026' },
-      { nome: 'Abril',     competencia: '04/2026' }
+      { nome: 'Abril',     competencia: '04/2026' },
+      { nome: 'Maio',      competencia: '05/2026' }
     ];
 
     return meses.map(function (m) {
